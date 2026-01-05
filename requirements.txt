@@ -1,5 +1,3 @@
-football-extractor/
-│
-├── app.py
-├── requirements.txt
-├── README.md   (optional)
+streamlit
+pandas
+thefuzz
