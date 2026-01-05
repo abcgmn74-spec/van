@@ -1,68 +1,107 @@
 import streamlit as st
 import pandas as pd
 import re
+from thefuzz import process
 
-# App Title
-st.set_page_config(page_title="Football Team Filter", layout="wide")
-st.title("⚽ ဘောလုံးအသင်း ရွေးချယ်သူများ စစ်ထုတ်ခြင်း")
+# စာမျက်နှာ အပြင်အဆင်
+st.set_page_config(page_title="Football Filter", layout="wide")
 
-# 1. File Upload လုပ်ရန်
-uploaded_file = st.file_uploader("ဘောလုံးအသင်းစာရင်း (.txt) ဖိုင်ကို Upload လုပ်ပါ", type=["txt"])
+# Standard English Team Names
+STANDARD_TEAMS = [
+    "Liverpool", "Arsenal", "Manchester United", "Manchester City", 
+    "Chelsea", "Tottenham Hotspur", "Aston Villa", "Newcastle United", 
+    "Brighton", "Real Madrid", "Barcelona", "Sevilla", "Villarreal"
+]
 
-if uploaded_file is not None:
-    # ဖိုင်ကို ဖတ်ခြင်း
-    content = uploaded_file.getvalue().decode("utf-8")
-    lines = content.splitlines()
+# မြန်မာလို စာလုံးပေါင်းမှားတာတွေကို English ပြောင်းပေးဖို့ Dictionary
+TEAM_MAP = {
+    "လီဗာပူး": "Liverpool", "လီပါပူး": "Liverpool", "လီဗားပူးလ်": "Liverpool", "လီလ်ပါပူး": "Liverpool",
+    "အာဆင်နယ်": "Arsenal", "အာဆင်နယျ": "Arsenal",
+    "မန်ယူ": "Manchester United", "မန်ယူနိုက်တက်": "Manchester United", "Man United": "Manchester United",
+    "မန်စီးတီး": "Manchester City", "မန်စီး": "Manchester City", "Man City": "Manchester City", "Mancity": "Manchester City",
+    "ဘာစီလိုနာ": "Barcelona", "ဘာစီ": "Barcelona", "Barcelona": "Barcelona",
+    "ရီးရဲလ်": "Real Madrid", "ရီးရဲ": "Real Madrid", "Real Madrid": "Real Madrid", "ရီရဲ": "Real Madrid",
+    "ဗီလာ": "Aston Villa", "အက်စတွန်ဗီလာ": "Aston Villa", "Aston Villa": "Aston Villa",
+    "ဘရိုက်တန်": "Brighton", "Brighton": "Brighton",
+    "နယူး": "Newcastle United", "နယူးကာဆယ်": "Newcastle United", "Newcastle": "Newcastle United", "နယူကာဆယ်": "Newcastle United",
+    "စပါး": "Tottenham Hotspur", "Spur": "Tottenham Hotspur", "Tottenham": "Tottenham Hotspur",
+    "ဆီးဗီလာ": "Sevilla", "Sevilla": "Sevilla", "ဆီဗီလာ": "Sevilla",
+    "ဗယ်လာရီးရဲလ်": "Villarreal", "Villareal": "Villarreal"
+}
+
+def get_standard_name(text):
+    text = text.strip()
+    if not text: return None
+    # ၁။ Map ထဲမှာ တိုက်ရိုက်ရှာမယ်
+    if text in TEAM_MAP:
+        return TEAM_MAP[text]
+    # ၂။ Fuzzy Match နဲ့ အနီးစပ်ဆုံးရှာမယ်
+    match, score = process.extractOne(text, STANDARD_TEAMS)
+    return match if score > 60 else text
+
+st.title("⚽ Football Team Filter App")
+st.info("Telegram မှ ကူးလာသော စာသားဖိုင်များကို Upload လုပ်ပြီး အသင်းအလိုက် စစ်ထုတ်နိုင်ပါသည်။")
+
+uploaded_file = st.file_uploader("Upload .txt file", type=["txt"])
+
+if uploaded_file:
+    raw_content = uploaded_file.getvalue().decode("utf-8")
     
-    data = []
-    all_teams = set()
-
-    # Data တွေကို format ချပြီး ဖတ်ခြင်း (ဥပမာ- ဖုန်းနံပတ်၊ အသင်းများ)
-    for line in lines:
-        if line.strip():
-            # ဖုန်းနံပတ်ကို ရှာခြင်း (Regex သုံးပြီး)
-            phone_match = re.search(r'(09\d{7,9})', line)
+    # User တစ်ယောက်ချင်းစီရဲ့ block ကို ခွဲထုတ်ခြင်း (နံမည်နဲ့ အချိန်ပါတဲ့ line ကို အခြေခံသည်)
+    user_blocks = re.split(r'\n\s*\n', raw_content)
+    
+    parsed_data = []
+    
+    for block in user_blocks:
+        lines = [l.strip() for l in block.split('\n') if l.strip()]
+        if len(lines) < 2: continue
+        
+        user_name = lines[0].split(',')[0] # ပထမဆုံးစာကြောင်းက နာမည်
+        phone = "Unknown"
+        user_teams = []
+        
+        for line in lines:
+            # ဖုန်းနံပတ်ရှာခြင်း (959... သို့မဟုတ် 09...)
+            phone_match = re.search(r'(959\d{8,10}|09\d{7,9})', line)
             if phone_match:
                 phone = phone_match.group(1)
-                # အသင်းအမည်များကို ခွဲထုတ်ခြင်း (comma သို့မဟုတ် space သုံးထားသည်ဟု ယူဆသည်)
-                # ဖုန်းနံပတ် မဟုတ်တဲ့ ကျန်တဲ့ စာသားတွေကို အသင်းအမည်အဖြစ် ယူဆမယ်
-                teams_part = line.replace(phone, "").strip()
-                # ကော်မာ (,) သို့မဟုတ် space ဖြင့် ခွဲထားသော အသင်းများကို ရယူခြင်း
-                teams = [t.strip() for t in re.split(r'[,|၊]', teams_part) if t.strip()]
-                
-                data.append({"Phone": phone, "Teams": teams})
-                for t in teams:
-                    all_teams.add(t)
-
-    # 2. Sidebar မှာ အသင်းများကို Select လုပ်ရန်
-    st.sidebar.header("ရှာဖွေလိုသောအသင်းများ")
-    selected_teams = st.sidebar.multiselect("အသင်းများကို ရွေးပါ:", sorted(list(all_teams)))
-
-    if selected_teams:
-        st.subheader(f"📍 {', '.join(selected_teams)} အသင်းကို ရွေးထားသော User များ")
-        
-        results = []
-        for entry in data:
-            # User ရွေးထားတဲ့ အသင်းတွေထဲမှာ ကိုယ်ရွေးလိုက်တဲ့အသင်း ပါ/မပါ စစ်ခြင်း
-            matched_teams = [t for t in entry['Teams'] if t in selected_teams]
-            if matched_teams:
-                results.append({
-                    "ဖုန်းနံပတ်": entry['Phone'],
-                    "ရွေးချယ်ထားသော အသင်းများ": ", ".join(entry['Teams']),
-                    "ကိုက်ညီမှု": ", ".join(matched_teams)
-                })
-
-        if results:
-            df = pd.DataFrame(results)
-            st.table(df) # ဇယားဖြင့် ပြသခြင်း
             
-            # Excel/CSV အနေနဲ့ ပြန်ထုတ်ချင်ရင်
-            csv = df.to_csv(index=False).encode('utf-8-sig')
-            st.download_button("Download Result as CSV", csv, "filtered_users.csv", "text/csv")
-        else:
-            st.warning("ကိုက်ညီသော User မရှိပါ။")
-    else:
-        st.info("ဘယ်ဘက် Sidebar မှ အသင်းများကို ရွေးချယ်ပေးပါ။")
+            # အသင်းအမည်များကို ရှာခြင်း (ရှေ့က နံပါတ်စဉ်များ ဖယ်ထုတ်ပြီး)
+            elif not any(x in line for x in ["[", "]", "/"]): # အချိန်ပါတဲ့ line မဟုတ်ရင်
+                clean_name = re.sub(r'^\d+[\s\.\)]+', '', line)
+                if clean_name and clean_name != user_name:
+                    std_name = get_standard_name(clean_name)
+                    if std_name in STANDARD_TEAMS:
+                        user_teams.append(std_name)
 
-else:
-    st.info("ကျေးဇူးပြု၍ .txt ဖိုင်ကို Upload အရင်လုပ်ပေးပါ။")
+        if len(user_teams) > 0:
+            parsed_data.append({
+                "Name": user_name,
+                "Phone": phone,
+                "Teams": list(dict.fromkeys(user_teams)) # Duplicate ဖယ်ခြင်း
+            })
+
+    # Sidebar Filter
+    st.sidebar.header("Filter Settings")
+    selected_team = st.sidebar.selectbox("Select Team to Search:", ["All Teams"] + STANDARD_TEAMS)
+
+    # Filtering Logic
+    filtered_list = []
+    for u in parsed_data:
+        if selected_team == "All Teams" or selected_team in u['Teams']:
+            filtered_list.append({
+                "User Name": u['Name'],
+                "Phone Number": u['Phone'],
+                "Selected Teams": ", ".join(u['Teams'])
+            })
+
+    if filtered_list:
+        df = pd.DataFrame(filtered_list)
+        st.success(f"Found {len(df)} users for {selected_team}")
+        st.dataframe(df, use_container_width=True)
+        
+        # CSV ထုတ်ရန်
+        csv = df.to_csv(index=False).encode('utf-8-sig')
+        st.download_button("📥 Download Results as CSV", csv, "football_filter.csv", "text/csv")
+    else:
+        st.warning("ကိုက်ညီသော အချက်အလက် မတွေ့ပါ။")
