@@ -26,7 +26,7 @@ TEAM_MAP = {
     "အဲဗာတန်": "Everton", "everton": "Everton", "ဝက်ဟမ်း": "West Ham", "westham": "West Ham",
     "စပါး": "Tottenham Hotspur", "spurs": "Tottenham Hotspur", "tottenham": "Tottenham Hotspur",
     "ဆီးဗီလာ": "Sevilla", "ဆီဗီလာ": "Sevilla", "sevilla": "Sevilla",
-    "ဗယ်လာရီးရဲလ်": "Villarreal", "villareal": "Villarreal"
+    "ဗယ်လာရီးရဲလ်": "Villarreal", "villareal": "Villarreal": "လီဗာပူလ်း"
 }
 
 def get_std_team(text):
@@ -121,3 +121,4 @@ if uploaded_file:
         st.dataframe(df, use_container_width=True)
         csv = df.to_csv(index=False).encode('utf-8-sig')
         st.download_button("📥 Result သိမ်းရန် (CSV)", csv, "football_fixed.csv", "text/csv")
+
