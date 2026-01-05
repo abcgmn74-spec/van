@@ -1,70 +1,51 @@
 import streamlit as st
 import pandas as pd
 import re
-import json
-import os
 
-st.set_page_config(page_title="Team Parser (RAW ONLY)", page_icon="⚽")
-st.title("⚽ Football Team Parser (RAW User Data Only)")
+st.set_page_config(page_title="Telegram TXT Parser", page_icon="📄")
+st.title("📄 Telegram TXT Parser (Username / Team / User Acc)")
 
-uploaded_file = st.file_uploader("📄 TXT file တင်ပါ", type=["txt"])
+uploaded_file = st.file_uploader("TXT file တင်ပါ", type=["txt"])
 
 # -------------------------------------------------
-# Learning storage (backend only, UI hidden)
+# Regex patterns
 # -------------------------------------------------
-LEARN_FILE = "learning_map.json"
-if os.path.exists(LEARN_FILE):
-    with open(LEARN_FILE, "r", encoding="utf-8") as f:
-        LEARNED_MAP = json.load(f)
-else:
-    LEARNED_MAP = {}
-
-STANDARD_TEAMS = [
-    "Aston Villa","Barcelona","Real Madrid","Arsenal","Liverpool",
-    "Man City","Man United","Tottenham","Brighton","Newcastle",
-    "Sevilla","Everton","West Ham","Villarreal","Athletic Club",
-    "Wolves","Brentford","Leeds","Fulham","Forest","Osasuna",
-    "Chelsea","Burnley","Bournemouth","Sunderland","Celta Vigo"
-]
-
-# -------------------------------------------------
-# STRICT USER HEADER DETECTOR
-# -------------------------------------------------
-USER_HEADER_PATTERN = re.compile(
+USER_HEADER = re.compile(
     r"^(.+?),\s*\[\d{1,2}/\d{1,2}/\d{4}\s+\d{1,2}:\d{2}\s+(AM|PM)\]$"
 )
 
-def extract_name(line):
-    m = USER_HEADER_PATTERN.match(line)
+PHONE_PATTERN = re.compile(r"(?:\+?959|09)\d{7,12}")
+
+USER_ACC_KEYWORDS = re.compile(r"(ok\s*bet|okbet|slot|shank|bet)", re.I)
+
+# -------------------------------------------------
+# Helpers
+# -------------------------------------------------
+def extract_username(line):
+    m = USER_HEADER.match(line)
     return m.group(1).strip() if m else None
 
-def extract_phone(text):
-    phones = re.findall(r"(?:\+?959|09)\d{7,12}", text.replace(" ", ""))
-    return phones[0] if phones else ""
+def is_user_acc(line):
+    if PHONE_PATTERN.search(line):
+        return True
+    if USER_ACC_KEYWORDS.search(line):
+        return True
+    return False
 
-def is_non_team_line(line):
-    return bool(re.search(r"(okbet|slot|bet|\d{5,})", line.lower()))
-
-def extract_raw_teams(lines):
-    raw = []
-    for line in lines:
-        if is_non_team_line(line):
-            continue
-        clean = re.sub(r"^[\W\d]+", "", line).strip()
-        if clean:
-            raw.append(clean)
-    return raw
+def clean_team(line):
+    # remove numbering like 1. 2) -
+    line = re.sub(r"^[\d\.\-\)\s]+", "", line)
+    return line.strip()
 
 # -------------------------------------------------
 # MAIN
 # -------------------------------------------------
 if uploaded_file:
-    content = uploaded_file.read().decode("utf-8")
+    text = uploaded_file.read().decode("utf-8")
 
-    # 🔑 split ONLY by valid user header
     blocks = re.split(
         r"(?=^.+?,\s*\[\d{1,2}/\d{1,2}/\d{4}\s+\d{1,2}:\d{2}\s+(AM|PM)\])",
-        content,
+        text,
         flags=re.MULTILINE
     )
 
@@ -75,31 +56,36 @@ if uploaded_file:
         if not lines:
             continue
 
-        name = extract_name(lines[0])
-        if not name:
-            continue  # ❌ skip emoji / a / b / c messages
+        username = extract_username(lines[0])
+        if not username:
+            continue  # skip non-user messages
 
-        phone = extract_phone(block)
-        raw_teams = extract_raw_teams(lines[1:])
+        teams = []
+        user_acc = []
+
+        for line in lines[1:]:
+            if is_user_acc(line):
+                user_acc.append(line)
+            else:
+                team = clean_team(line)
+                if team:
+                    teams.append(team)
 
         records.append({
-            "Name": name,
-            "Phone": phone,
-            "Raw Teams (User Input)": ", ".join(raw_teams)
+            "Username": username,                # 🟢
+            "Teams (Blue)": ", ".join(teams),    # 🔵
+            "User Acc (Red)": ", ".join(user_acc) # 🔴
         })
 
     df = pd.DataFrame(records)
 
-    st.success(f"✅ Total users parsed: {len(df)}")
+    st.success(f"✅ Parsed users: {len(df)}")
 
-    # ---------------- USER VIEW ONLY ----------------
-    st.subheader("🟢 User Data (RAW – TXT အတိုင်း)")
     st.dataframe(df, use_container_width=True)
 
-    # ---------------- EXPORT ----------------
     st.download_button(
-        "⬇️ Download CSV (RAW only)",
+        "⬇️ Download CSV",
         df.to_csv(index=False),
-        file_name="team_parser_raw_only.csv",
+        file_name="telegram_parsed_result.csv",
         mime="text/csv"
     )
