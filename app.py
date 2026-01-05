@@ -3,9 +3,9 @@ import pandas as pd
 import re
 from thefuzz import process
 
-st.set_page_config(page_title="Football Data Scanner", layout="wide")
+st.set_page_config(page_title="Football Data Extractor", layout="wide")
 
-# Standard Teams for Matching
+# Standard Teams
 STANDARD_TEAMS = [
     "Liverpool", "Arsenal", "Manchester United", "Manchester City", 
     "Chelsea", "Tottenham Hotspur", "Aston Villa", "Newcastle United", 
@@ -28,15 +28,15 @@ TEAM_MAP = {
 def clean_team_name(text):
     text = text.strip()
     if not text: return None
-    # ၁။ Map ထဲမှာရှိလားအရင်စစ်
+    # ၁။ Map စစ်ဆေးခြင်း
     for key, val in TEAM_MAP.items():
         if key.lower() in text.lower(): return val
-    # ၂။ English Standard ထဲမှာရှိလားစစ်
+    # ၂။ Fuzzy Match (English)
     match, score = process.extractOne(text, STANDARD_TEAMS)
     if score > 85: return match
     return text 
 
-st.title("⚽ Football Data Extractor")
+st.title("⚽ Football Data Extractor (Smart Phone Detection)")
 
 uploaded_file = st.file_uploader("Upload .txt file", type=["txt"])
 
@@ -46,8 +46,9 @@ if uploaded_file:
     
     parsed_data = []
     current_user = None
-    all_extracted_items = set() # Filter မှာပြဖို့ item အားလုံးကိုသိမ်းမယ်
+    all_extracted_items = set() 
     
+    # Telegram timestamp pattern
     user_pattern = re.compile(r'^(.+),\s\[\d{1,2}/\d{1,2}/\d{4}.+\]')
 
     for line in lines:
@@ -61,17 +62,22 @@ if uploaded_file:
             
             current_user = {
                 "Name": match.group(1),
-                "Phone": "Unknown",
+                "Phone": "မသိပါ",
                 "Teams": []
             }
             continue
         
         if current_user:
-            phone_match = re.search(r'(959\d{8,10}|09\d{7,9})', line)
+            # ဖုန်းနံပတ် စစ်ထုတ်ခြင်း - 09 သို့မဟုတ် 959 နဲ့စတာအပြင် ဂဏန်း ၆ လုံးအထက်ပါရင် ယူမယ်
+            # (Regex: 09 သို့မဟုတ် 959 ပါသော နံပါတ်များ သို့မဟုတ် ဂဏန်းသက်သက် ၆ လုံးနှင့်အထက်)
+            phone_match = re.search(r'(09\d{7,11}|959\d{7,11}|\d{6,15})', line.replace(" ", "").replace("-", ""))
+            
             if phone_match:
+                # လက်ရှိ User မှာ ဖုန်းနံပတ် မရှိသေးရင် သို့မဟုတ် ပိုရှည်တဲ့ နံပါတ်တွေ့ရင် Update လုပ်မယ်
                 current_user["Phone"] = phone_match.group(1)
             else:
-                cleaned = re.sub(r'^\d+[\s\.\)]+', '', line)
+                # အသင်း (သို့မဟုတ်) စာသား
+                cleaned = re.sub(r'^\d+[\s\.\)]+', '', line) # နံပါတ်စဉ်ဖယ်ထုတ်ခြင်း
                 if cleaned and cleaned != current_user["Name"]:
                     std_name = clean_team_name(cleaned)
                     if std_name:
@@ -81,21 +87,18 @@ if uploaded_file:
     if current_user:
         parsed_data.append(current_user)
 
-    # --- Filter Options ---
+    # --- Sidebar Filter ---
     st.sidebar.header("စစ်ထုတ်ရန် Settings")
-    
-    # Filter list ထဲမှာ Standard အမည်ရော၊ User ရဲ့ ထူးခြားတဲ့ comment တွေရော ပါအောင်လုပ်မယ်
     filter_options = sorted(list(all_extracted_items))
     selected_items = st.sidebar.multiselect(
-        "ရွေးချယ်ထားသော Item များအလိုက် စစ်ထုတ်ရန်:", 
+        "မန့်ထားသော စာသားများအလိုက် စစ်ထုတ်ရန်:", 
         options=filter_options
     )
 
     final_list = []
     for u in parsed_data:
-        # အသင်း/စာသား စစ်ထုတ်ခြင်း logic
         if selected_items:
-            # User ရဲ့ list ထဲမှာ ရွေးချယ်ထားတဲ့ item တစ်ခုခုပါရင် ပြမယ်
+            # User ရွေးထားတဲ့ item ထဲမှာ filter လုပ်ထားတဲ့ item တစ်ခုခု ပါ/မပါ စစ်ခြင်း
             if not any(item in u['Teams'] for item in selected_items):
                 continue
 
@@ -112,6 +115,6 @@ if uploaded_file:
         st.dataframe(df, use_container_width=True)
         
         csv = df.to_csv(index=False).encode('utf-8-sig')
-        st.download_button("📥 Result ကို သိမ်းရန်", csv, "football_filter_results.csv", "text/csv")
+        st.download_button("📥 Result သိမ်းရန် (CSV)", csv, "football_report.csv", "text/csv")
     else:
         st.warning("ကိုက်ညီသော အချက်အလက် မတွေ့ပါ။")
