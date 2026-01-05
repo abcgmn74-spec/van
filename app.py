@@ -13,16 +13,16 @@ STANDARD_TEAMS = [
 ]
 
 TEAM_MAP = {
-    "လီဗာပူး": "Liverpool", "လီပါပူး": "Liverpool", "လီဗားပူးလ်": "Liverpool",
+    "လီဗာပူး": "Liverpool", "လီပါပူး": "Liverpool", "လီဗားပူးလ်": "Liverpool", "လီလ်ပါပူး": "Liverpool",
     "အာဆင်နယ်": "Arsenal", "အာဆင်နယျ": "Arsenal",
     "မန်ယူ": "Manchester United", "မန်ယူနိုက်တက်": "Manchester United",
-    "မန်စီးတီး": "Manchester City", "မန်စီး": "Manchester City",
+    "မန်စီးတီး": "Manchester City", "မန်စီး": "Manchester City", "Mancity": "Manchester City",
     "ဘာစီလိုနာ": "Barcelona", "ဘာစီ": "Barcelona",
-    "ရီးရဲလ်": "Real Madrid", "ရီးရဲ": "Real Madrid", "ရီရဲ": "Real Madrid",
-    "ဗီလာ": "Aston Villa", "အက်စတွန်ဗီလာ": "Aston Villa",
-    "ဘရိုက်တန်": "Brighton", "နယူး": "Newcastle United",
-    "စပါး": "Tottenham Hotspur", "ဆီးဗီလာ": "Sevilla",
-    "ဗယ်လာရီးရဲလ်": "Villarreal"
+    "ရီးရဲလ်": "Real Madrid", "ရီးရဲ": "Real Madrid", "ရီရဲ": "Real Madrid", "Real madrid": "Real Madrid",
+    "ဗီလာ": "Aston Villa", "အက်စတွန်ဗီလာ": "Aston Villa", "Aston villa": "Aston Villa",
+    "ဘရိုက်တန်": "Brighton", "နယူး": "Newcastle United", "Newcastle": "Newcastle United",
+    "စပါး": "Tottenham Hotspur", "ဆီးဗီလာ": "Sevilla", "ဆီဗီလာ": "Sevilla",
+    "ဗယ်လာရီးရဲလ်": "Villarreal", "Villareal": "Villarreal"
 }
 
 def clean_team_name(text):
@@ -30,13 +30,13 @@ def clean_team_name(text):
     if not text: return None
     # ၁။ Map ထဲမှာရှိလားအရင်စစ်
     for key, val in TEAM_MAP.items():
-        if key in text: return val
+        if key.lower() in text.lower(): return val
     # ၂။ English Standard ထဲမှာရှိလားစစ်
     match, score = process.extractOne(text, STANDARD_TEAMS)
     if score > 85: return match
-    return text # အသင်းမဟုတ်ရင် မူရင်းစာသားအတိုင်းပြန်ပေးမယ်
+    return text 
 
-st.title("⚽ Football Data Extractor (Full Scan)")
+st.title("⚽ Football Data Extractor")
 
 uploaded_file = st.file_uploader("Upload .txt file", type=["txt"])
 
@@ -46,15 +46,14 @@ if uploaded_file:
     
     parsed_data = []
     current_user = None
+    all_extracted_items = set() # Filter မှာပြဖို့ item အားလုံးကိုသိမ်းမယ်
     
-    # Telegram timestamp pattern: Name, [1/1/2026 9:30 AM]
     user_pattern = re.compile(r'^(.+),\s\[\d{1,2}/\d{1,2}/\d{4}.+\]')
 
     for line in lines:
         line = line.strip()
         if not line: continue
         
-        # User အသစ် စတင်ကြောင်းစစ်ဆေး
         match = user_pattern.match(line)
         if match:
             if current_user:
@@ -68,52 +67,51 @@ if uploaded_file:
             continue
         
         if current_user:
-            # Phone number detection
             phone_match = re.search(r'(959\d{8,10}|09\d{7,9})', line)
             if phone_match:
                 current_user["Phone"] = phone_match.group(1)
             else:
-                # အသင်း (သို့မဟုတ်) ရေးထားတဲ့စာသားကို သန့်စင်ပြီးသိမ်းဆည်း
-                cleaned = re.sub(r'^\d+[\s\.\)]+', '', line) # နံပါတ်စဉ်ဖယ်
+                cleaned = re.sub(r'^\d+[\s\.\)]+', '', line)
                 if cleaned and cleaned != current_user["Name"]:
                     std_name = clean_team_name(cleaned)
                     if std_name:
                         current_user["Teams"].append(std_name)
+                        all_extracted_items.add(std_name)
 
     if current_user:
         parsed_data.append(current_user)
 
     # --- Filter Options ---
-    st.sidebar.header("Filter Settings")
-    only_5 = st.sidebar.checkbox("၅ ခု အတိအကျမန့်သူများကိုသာ ပြရန်", value=False)
-    selected_teams = st.sidebar.multiselect("အသင်းအလိုက် စစ်ထုတ်ရန် (Standard အမည်များ)", STANDARD_TEAMS)
+    st.sidebar.header("စစ်ထုတ်ရန် Settings")
+    
+    # Filter list ထဲမှာ Standard အမည်ရော၊ User ရဲ့ ထူးခြားတဲ့ comment တွေရော ပါအောင်လုပ်မယ်
+    filter_options = sorted(list(all_extracted_items))
+    selected_items = st.sidebar.multiselect(
+        "ရွေးချယ်ထားသော Item များအလိုက် စစ်ထုတ်ရန်:", 
+        options=filter_options
+    )
 
     final_list = []
     for u in parsed_data:
-        # အရေအတွက်စစ်ခြင်း
-        count = len(u['Teams'])
-        if only_5 and count != 5:
-            continue
-            
-        # အသင်းစစ်ထုတ်ခြင်း
-        if selected_teams:
-            # User ရဲ့ list ထဲမှာ ရွေးထားတဲ့ standard အသင်းပါမှပြမယ်
-            if not any(t in u['Teams'] for t in selected_teams):
+        # အသင်း/စာသား စစ်ထုတ်ခြင်း logic
+        if selected_items:
+            # User ရဲ့ list ထဲမှာ ရွေးချယ်ထားတဲ့ item တစ်ခုခုပါရင် ပြမယ်
+            if not any(item in u['Teams'] for item in selected_items):
                 continue
 
         final_list.append({
-            "User Name": u['Name'],
-            "Phone": u['Phone'],
-            "Selected Items": ", ".join(u['Teams']),
-            "Count": count
+            "နာမည်": u['Name'],
+            "ဖုန်းနံပတ်": u['Phone'],
+            "မန့်ထားသောစာသားများ": ", ".join(u['Teams']),
+            "အရေအတွက်": len(u['Teams'])
         })
 
     if final_list:
         df = pd.DataFrame(final_list)
-        st.success(f"စုစုပေါင်း အသုံးပြုသူ {len(final_list)} ဦးကို ရှာဖွေတွေ့ရှိပါသည်။")
+        st.success(f"စုစုပေါင်း {len(final_list)} ဦး တွေ့ရှိပါသည်။")
         st.dataframe(df, use_container_width=True)
         
         csv = df.to_csv(index=False).encode('utf-8-sig')
-        st.download_button("📥 Result ကို CSV အနေနဲ့ သိမ်းရန်", csv, "football_results.csv", "text/csv")
+        st.download_button("📥 Result ကို သိမ်းရန်", csv, "football_filter_results.csv", "text/csv")
     else:
         st.warning("ကိုက်ညီသော အချက်အလက် မတွေ့ပါ။")
