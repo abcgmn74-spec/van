@@ -1,52 +1,48 @@
 import streamlit as st
 import pandas as pd
 import re
-from thefuzz import process
+import google.generativeai as genai
 
-st.set_page_config(page_title="Football Data Final", layout="wide")
+st.set_page_config(page_title="Football Data AI Pro", layout="wide")
 
-# Standard Teams
-STANDARD_TEAMS = [
-    "Arsenal", "Aston Villa", "Barcelona", "Brighton", "Chelsea", "Everton", "Liverpool", 
-    "Manchester City", "Manchester United", "Newcastle United", "Real Madrid", "Sevilla", 
-    "Tottenham Hotspur", "Villarreal", "Atletico Madrid", "West Ham", "AC Milan", "Inter Milan", "Juventus"
-]
+# --- Gemini API Setup ---
+# Sidebar မှာ API Key ထည့်ခိုင်းမယ် (လုံခြုံရေးအတွက်)
+api_key = st.sidebar.text_input("Gemini API Key ကိုထည့်ပါ:", type="password")
 
-# Mapping Variations to Standard Name
+if api_key:
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel('gemini-1.5-flash')
+else:
+    st.sidebar.warning("API Key မရှိရင် Mapping Dictionary နဲ့ပဲ အလုပ်လုပ်ပါမယ်။")
+
+# Standard Dictionary (Backup အနေနဲ့ ထည့်ထားဆဲဖြစ်သည်)
 TEAM_MAP = {
-    "မန်စီး": "Manchester City", "မန်စီးတီး": "Manchester City", "mancity": "Manchester City", "man city": "Manchester City",
-    "မန်ယူ": "Manchester United", "မန်ယူနိုက်တက်": "Manchester United", "man u": "Manchester United", "manu": "Manchester United",
-    "လီပါပူး": "Liverpool", "လီဗာပူး": "Liverpool", "လီဗားပူးလ်": "Liverpool", "လီလ်ပါပူး": "Liverpool", "liverpool": "Liverpool",
-    "အာဆင်နယ်": "Arsenal", "arsenal": "Arsenal",
-    "ဘာစီလိုနာ": "Barcelona", "ဘာစီ": "Barcelona", "ဘာကာ": "Barcelona", "ဘာဂါ": "Barcelona", "barca": "Barcelona",
-    "ရီးရဲလ်": "Real Madrid", "ရီးရဲ": "Real Madrid", "ရီးရယ်": "Real Madrid", "ရီရဲ": "Real Madrid", "real": "Real Madrid", "madrid": "Real Madrid",
-    "နယူကာဆယ်": "Newcastle United", "နယူး": "Newcastle United", "newcastle": "Newcastle United",
-    "ဘရိုက်တန်": "Brighton", "brighton": "Brighton",
-    "ဗီလာ": "Aston Villa", "အက်စတွန်ဗီလာ": "Aston Villa", "aston villa": "Aston Villa",
-    "အဲဗာတန်": "Everton", "everton": "Everton", "ဝက်ဟမ်း": "West Ham", "westham": "West Ham",
-    "စပါး": "Tottenham Hotspur", "spurs": "Tottenham Hotspur", "tottenham": "Tottenham Hotspur",
-    "ဆီးဗီလာ": "Sevilla", "ဆီဗီလာ": "Sevilla", "sevilla": "Sevilla",
-    "ဗယ်လာရီးရဲလ်": "Villarreal", "villareal": "Villarreal": "လီဗာပူလ်း"
+    "မန်စီး": "Manchester City", "မန်ယူ": "Manchester United", "လီဗာပူး": "Liverpool",
+    "အာဆင်နယ်": "Arsenal", "ဘာစီ": "Barcelona", "ရီးရဲ": "Real Madrid",
+    "ဗီလာ": "Aston Villa", "ဘရိုက်တန်": "Brighton", "နယူး": "Newcastle United"
 }
 
-def get_std_team(text):
-    # ရှေ့က နံပါတ်စဉ်တွေ ဖယ်ထုတ်ခြင်း (ဥပမာ - "1. ဗီလာ" -> "ဗီလာ")
-    text = re.sub(r'^\d+[\s\.\)-]+', '', text).strip()
-    text_lower = text.lower()
-    
-    # ၁။ Map ထဲမှာ တိုက်ရိုက်ပါလား အရင်စစ်မယ်
+def translate_team_with_ai(text):
+    # ၁။ အရင်ဆုံး Dictionary ထဲမှာ ပါလားကြည့်မယ် (API ခေါ်တာ သက်သာအောင်)
     for key, val in TEAM_MAP.items():
-        if key.lower() == text_lower or key.lower() in text_lower:
+        if key in text:
             return val
-            
-    # ၂။ Fuzzy Match (၈၀% အထိ လျှော့စစ်မယ်)
-    match, score = process.extractOne(text, STANDARD_TEAMS)
-    if score > 80: return match
+    
+    # ၂။ Dictionary ထဲမှာမပါရင် Gemini API ကို မေးမယ်
+    if api_key:
+        try:
+            prompt = f"Convert this Myanmar football team name or informal text to its standard English professional name. Return ONLY the English name. If not a team, return 'Other'. Text: {text}"
+            response = model.generate_content(prompt)
+            result = response.text.strip()
+            if result != "Other":
+                return result
+        except:
+            pass
     return None
 
-st.title("⚽ Football Data Pro (Final Fixed Version)")
+st.title("⚽ Football Data Extractor (Gemini AI Powered)")
 
-uploaded_file = st.file_uploader("Upload .txt file", type=["txt"])
+uploaded_file = st.file_uploader("Telegram File (.txt) ကို Upload တင်ပါ", type=["txt"])
 
 if uploaded_file:
     content = uploaded_file.getvalue().decode("utf-8")
@@ -54,10 +50,13 @@ if uploaded_file:
     
     parsed_data = []
     current_user = None
-    all_other_comments = set()
     user_pattern = re.compile(r'^(.+),\s\[\d{1,2}/\d{1,2}/\d{4}.+\]')
 
-    for line in lines:
+    # Loading bar ပြပေးမယ်
+    progress_bar = st.progress(0)
+    total_lines = len(lines)
+
+    for i, line in enumerate(lines):
         line = line.strip()
         if not line: continue
         
@@ -68,57 +67,43 @@ if uploaded_file:
             continue
         
         if current_user:
-            # ဖုန်းနံပတ် စစ်ခြင်း
+            # ဖုန်းနံပတ် စစ်ဆေးခြင်း
             clean_num = re.sub(r'[^0-9]', '', line)
-            is_phone = (len(clean_num) >= 6 and (line.startswith('09') or line.startswith('959') or 
-                        any(x in line.lower() for x in ['ok', 'bet', 'best', 'ph', 'tel']))) or (len(clean_num) >= 9)
-
-            if is_phone:
+            if len(clean_num) >= 6 and (line.startswith('09') or line.startswith('959') or 'bet' in line.lower()):
                 current_user["Phone"] = clean_num
             else:
-                # အသင်းဟုတ်၊ မဟုတ် အရင်စစ်မယ်
-                std_name = get_std_team(line)
-                
-                if std_name:
-                    if std_name not in current_user["Teams"]:
-                        current_user["Teams"].append(std_name)
+                # AI သုံးပြီး အသင်းအမည် ပြောင်းလဲခြင်း
+                team_name = translate_team_with_ai(line)
+                if team_name and team_name != "Other":
+                    if team_name not in current_user["Teams"]:
+                        current_user["Teams"].append(team_name)
                 else:
-                    # အသင်းလည်းမဟုတ်၊ ဖုန်းလည်းမဟုတ်၊ User Name လည်းမဟုတ်မှ Other ထဲထည့်မယ်
-                    if line.strip() != current_user["Name"]:
-                        current_user["Other_Comments"].append(line.strip())
-                        all_other_comments.add(line.strip())
+                    if line != current_user["Name"]:
+                        current_user["Other_Comments"].append(line)
+        
+        progress_bar.progress((i + 1) / total_lines)
 
     if current_user: parsed_data.append(current_user)
 
-    # --- Filters ---
+    # --- Filter Section ---
     st.sidebar.header("🔍 Filters")
-    selected_teams = st.sidebar.multiselect("အသင်းများဖြင့် စစ်ထုတ်ရန်:", sorted(STANDARD_TEAMS))
-    selected_others = st.sidebar.multiselect("Other Comments ဖြင့် စစ်ထုတ်ရန်:", sorted(list(all_other_comments)))
-    show_only_five = st.sidebar.checkbox("နှစ်ခုပေါင်း ၅ ခု အတိအကျရှိသူများကိုသာ ပြရန်", value=True)
+    show_only_five = st.sidebar.checkbox("နှစ်ခုပေါင်း ၅ ခု ရှိသူများသာ", value=True)
 
     final_list = []
     for u in parsed_data:
-        # Filter logic
-        matches_team = any(t in u['Teams'] for t in selected_teams) if selected_teams else True
-        matches_other = any(o in u['Other_Comments'] for o in selected_others) if selected_others else True
-        
-        if not (matches_team and matches_other): continue
-            
         total_count = len(u['Teams']) + len(u['Other_Comments'])
-        if show_only_five and total_count != 5: continue
+        if show_only_five and total_count != 5:
+            continue
 
         final_list.append({
             "User Name": u['Name'],
             "Phone Number": u['Phone'],
             "Football Teams": ", ".join(u['Teams']),
             "Other Comments": ", ".join(u['Other_Comments']),
-            "Total Items": total_count
+            "Count": total_count
         })
 
     if final_list:
         df = pd.DataFrame(final_list)
-        st.success(f"တွေ့ရှိသူစုစုပေါင်း: {len(final_list)} ဦး")
         st.dataframe(df, use_container_width=True)
-        csv = df.to_csv(index=False).encode('utf-8-sig')
-        st.download_button("📥 Result သိမ်းရန် (CSV)", csv, "football_fixed.csv", "text/csv")
-
+        st.download_button("📥 CSV ဒေါင်းလုဒ်ဆွဲရန်", df.to_csv(index=False).encode('utf-8-sig'), "ai_report.csv")
