@@ -10,10 +10,10 @@ STANDARD_TEAMS = [
     "Arsenal", "Aston Villa", "Barcelona", "Brighton", "Chelsea", 
     "Everton", "Liverpool", "Manchester City", "Manchester United", 
     "Newcastle United", "Real Madrid", "Sevilla", "Tottenham Hotspur", 
-    "Villarreal", "Atletico Madrid", "West Ham", "AC Milan", "Inter Milan", "Juventus"
+    "Villarreal", "Atletico Madrid", "West Ham"
 ]
 
-# Myanmar Phonetic Mapping
+# Mapping (မြန်မာအခေါ်အဝေါ်များ)
 TEAM_MAP = {
     "မန်စီး": "Manchester City", "မန်စီးတီး": "Manchester City", "mancity": "Manchester City",
     "မန်ယူ": "Manchester United", "မန်ယူနိုက်တက်": "Manchester United", "man u": "Manchester United",
@@ -33,7 +33,7 @@ def get_std_team(text):
     if score > 85: return match
     return None
 
-st.title("⚽ Football Data Pro (Smart 5-Item Filter)")
+st.title("⚽ Football Data Pro (Dual Filter System)")
 
 uploaded_file = st.file_uploader("Upload .txt file", type=["txt"])
 
@@ -43,7 +43,7 @@ if uploaded_file:
     
     parsed_data = []
     current_user = None
-    all_other_comments = set() 
+    all_other_comments = set() # Other filter အတွက် list ထုတ်ရန်
     user_pattern = re.compile(r'^(.+),\s\[\d{1,2}/\d{1,2}/\d{4}.+\]')
 
     for line in lines:
@@ -79,25 +79,28 @@ if uploaded_file:
     # --- Sidebar Filters ---
     st.sidebar.header("🔍 Filters")
     
-    selected_teams = st.sidebar.multiselect("ဘောလုံးအသင်းများဖြင့် စစ်ထုတ်ရန်:", sorted(STANDARD_TEAMS))
+    # ၁။ ဘောလုံးအသင်း Filter
+    selected_teams = st.sidebar.multiselect("အသင်းအလိုက် စစ်ထုတ်ရန်:", sorted(STANDARD_TEAMS))
+    
+    # ၂။ တခြားမှတ်ချက် Filter
     selected_others = st.sidebar.multiselect("တခြားမှတ်ချက် (Other) များဖြင့် စစ်ထုတ်ရန်:", sorted(list(all_other_comments)))
     
-    # ၅ ခုပြည့်သူများကိုသာ ပြရန် Toggle
-    show_only_five = st.sidebar.checkbox("နှစ်ခုပေါင်း ၅ ခု အတိအကျရှိသူများကိုသာ ပြရန်", value=True)
+    # ၃။ ၅ ခုပြည့်သူများကိုသာ ပြရန်
+    show_only_five = st.sidebar.checkbox("၅ သင်းအတိအကျ ရွေးထားသူများကိုသာ ပြရန်", value=False)
 
     final_list = []
     for u in parsed_data:
-        # Filter Logic: ရွေးထားတဲ့အထဲက တစ်ခုခုပါရင်ပြမယ်
-        matches_team = any(t in u['Teams'] for t in selected_teams) if selected_teams else True
-        matches_other = any(o in u['Other_Comments'] for o in selected_others) if selected_others else True
-        
-        if not (matches_team and matches_other):
-            continue
+        # Team Filter Logic
+        if selected_teams:
+            if not any(t in u['Teams'] for t in selected_teams): continue
             
-        # Count Logic: Teams + Other Comments
-        total_count = len(u['Teams']) + len(u['Other_Comments'])
-        
-        if show_only_five and total_count != 5:
+        # Other Comment Filter Logic
+        if selected_others:
+            if not any(o in u['Other_Comments'] for o in selected_others): continue
+            
+        # 5-Team Count Logic
+        team_count = len(u['Teams'])
+        if show_only_five and team_count != 5:
             continue
 
         final_list.append({
@@ -105,7 +108,7 @@ if uploaded_file:
             "Phone Number": u['Phone'],
             "Football Teams": ", ".join(u['Teams']),
             "Other Comments": ", ".join(u['Other_Comments']),
-            "Total Items": total_count
+            "Count": team_count
         })
 
     if final_list:
@@ -114,6 +117,6 @@ if uploaded_file:
         st.dataframe(df, use_container_width=True)
         
         csv = df.to_csv(index=False).encode('utf-8-sig')
-        st.download_button("📥 Result သိမ်းရန် (CSV)", csv, "final_filtered_data.csv", "text/csv")
+        st.download_button("📥 Result သိမ်းရန် (CSV)", csv, "football_dual_filter.csv", "text/csv")
     else:
-        st.warning("ကိုက်ညီသော အချက်အလက် မတွေ့ပါ။ Filter များကို ချိန်ညှိပေးပါ။")
+        st.warning("ကိုက်ညီသော အချက်အလက် မတွေ့ပါ။ Filter များကို ပြန်စစ်ပေးပါ။")
