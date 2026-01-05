@@ -1,128 +1,110 @@
 import streamlit as st
-import pandas as pd
 import re
-from difflib import get_close_matches
+import csv
+from io import StringIO
 
-# -------------------------
-# TEAM DATABASE
-# -------------------------
-TEAM_MAP = {
-    "manchester united": ["man utd", "manu", "မန်ယူ", "မန်ချက်စတာယူနိုက်တက်"],
-    "manchester city": ["man city", "mancity", "မန်စီးတီး"],
-    "liverpool": ["liverpool", "liverpol", "လီဗာပူး"],
-    "arsenal": ["arsenal", "asenal", "အာဆင်နယ်"],
-    "chelsea": ["chelsea", "chelsa", "ချယ်လ်ဆီး"],
-}
-
-# -------------------------
-# FUNCTIONS
-# -------------------------
-def normalize_team(text):
-    text = text.lower()
-    for correct, variants in TEAM_MAP.items():
-        for v in variants:
-            if v in text:
-                return correct
-
-    words = re.findall(r"[a-zA-Z]+", text)
-    for w in words:
-        match = get_close_matches(w, TEAM_MAP.keys(), cutoff=0.75)
-        if match:
-            return match[0]
-
-    return None
-
-
-def extract_username(text):
-    m = re.search(r'@[\w\d_]+', text)
-    return m.group() if m else None
-
-
-def extract_phone(text):
-    return re.findall(r'(09\d{7,9})', text)
-
-
-# -------------------------
-# STREAMLIT UI
-# -------------------------
 st.set_page_config(page_title="Telegram Prediction Analyzer", layout="wide")
-
 st.title("⚽ Telegram Prediction Analyzer")
-st.write("TXT file upload လုပ်ပြီး user prediction တွေကို clean & analyze လုပ်ပါ")
 
-uploaded_file = st.file_uploader("📄 Upload TXT file", type=["txt"])
+# =========================
+# TEAM INPUT
+# =========================
+team_input = st.text_input(
+    "✍️ Team names (comma separated)",
+    placeholder="Newcastle United, Chelsea, Inter Milan"
+)
 
-if uploaded_file:
-    lines = uploaded_file.read().decode("utf-8").splitlines()
+uploaded = st.file_uploader("📄 Upload TXT file", type="txt")
 
-    data = []
-    unknown_texts = []
-    phones = []
+def build_team_map(team_input):
+    teams = [t.strip() for t in team_input.split(",") if t.strip()]
+    team_map = {}
+    for t in teams:
+        key = t.lower()
+        team_map[t] = key
+    return team_map
 
-    for line in lines:
-        if not line.strip():
+def detect_teams(text, team_map):
+    text = text.lower()
+    found = []
+    for standard, key in team_map.items():
+        if key in text:
+            found.append(standard)
+    return found
+
+def detect_phone(text):
+    return re.findall(r'(09\d{7,9}|95\d{8,12})', text)
+
+# =========================
+# MAIN LOGIC
+# =========================
+if uploaded and team_input:
+    team_map = build_team_map(team_input)
+
+    raw = uploaded.read().decode("utf-8")
+    blocks = raw.split("\n\n")
+
+    clean_data = []
+    no_team_msgs = []
+
+    for block in blocks:
+        lines = block.strip().splitlines()
+        if len(lines) < 2:
             continue
 
-        username = extract_username(line)
-        phone = extract_phone(line)
-        team = normalize_team(line)
+        user = lines[0].split(",")[0].strip()
+        full_text = " ".join(lines)
 
-        if phone:
-            phones.extend(phone)
+        teams = detect_teams(full_text, team_map)
+        phones = detect_phone(full_text)
 
-        if team:
-            data.append({
-                "User": username,
-                "Team": team,
-                "Raw Text": line
-            })
-        else:
-            unknown_texts.append(line)
+        if not teams:
+            no_team_msgs.append(block)
+            continue
 
-    df = pd.DataFrame(data)
+        clean_data.append({
+            "User": user,
+            "Teams": ", ".join(teams),
+            "Phone": ", ".join(phones)
+        })
 
-    # -------------------------
-    # MAIN TABLE
-    # -------------------------
-    st.subheader("✅ Cleaned Predictions")
-    st.dataframe(df, use_container_width=True)
+    # =========================
+    # DISPLAY
+    # =========================
+    st.subheader("✅ Clean Predictions")
+    st.table(clean_data)
 
-    # -------------------------
-    # TEAM FILTER
-    # -------------------------
+    # =========================
+    # FILTER BY TEAM
+    # =========================
     st.subheader("🔍 Filter by Team")
-    team_choice = st.selectbox(
-        "Choose team",
-        sorted(df["Team"].unique()) if not df.empty else []
-    )
+    selected_team = st.selectbox("Choose team", list(team_map.keys()))
 
-    if team_choice:
-        filtered = df[df["Team"] == team_choice]
-        st.write(f"**{team_choice} ကိုခန့်မှန်းထားတဲ့ user များ**")
-        st.dataframe(filtered, use_container_width=True)
+    filtered = [d for d in clean_data if selected_team in d["Teams"]]
+    st.table(filtered)
 
-    # -------------------------
-    # UNKNOWN TEXT
-    # -------------------------
-    st.subheader("❌ Football Team မဟုတ်တဲ့ Text များ")
-    st.text_area("Unknown Inputs", "\n".join(unknown_texts), height=200)
+    # =========================
+    # NO TEAM MESSAGES
+    # =========================
+    st.subheader("❌ Messages without selected teams")
+    st.text_area("Filtered messages", "\n\n".join(no_team_msgs), height=200)
 
-    # -------------------------
-    # PHONE NUMBERS
-    # -------------------------
-    st.subheader("📱 Extracted Phone Numbers")
-    st.write(list(set(phones)))
+    # =========================
+    # CSV EXPORT
+    # =========================
+    csv_buffer = StringIO()
+    writer = csv.DictWriter(csv_buffer, fieldnames=["User", "Teams", "Phone"])
+    writer.writeheader()
+    writer.writerows(clean_data)
 
-    # -------------------------
-    # DOWNLOAD
-    # -------------------------
-    csv = df.to_csv(index=False).encode("utf-8")
     st.download_button(
-        "⬇️ Download Cleaned CSV",
-        csv,
-        "clean_predictions.csv",
+        "⬇️ Download CSV",
+        csv_buffer.getvalue(),
+        "predictions_cleaned.csv",
         "text/csv"
     )
 
+elif not team_input:
+    st.info("👆 Team name တွေကို အရင်ထည့်ပါ (comma separated)")
 else:
-    st.info("⬆️ TXT file တစ်ခု upload လုပ်ပါ")
+    st.info("📄 TXT file upload လုပ်ပါ")
