@@ -1,136 +1,253 @@
 import streamlit as st
 import pandas as pd
 import re
+import sqlite3
 from thefuzz import process
+from collections import Counter
+from datetime import datetime
 
-# ---------------- CONFIG ----------------
+# ================= CONFIG =================
 st.set_page_config(
-    page_title="Football Data Extractor",
-    layout="wide"
+    page_title="Football Name Normalizer",
+    layout="centered"
 )
 
-st.title("⚽ Football Data Extractor (No AI Version)")
+st.title("⚽ Football Name Normalizer (Myanmar → English)")
 
-# ---------------- DATA ----------------
+# ================= DATABASE =================
+conn = sqlite3.connect("data.db", check_same_thread=False)
+c = conn.cursor()
+
+c.execute("""
+CREATE TABLE IF NOT EXISTS users (
+    name TEXT,
+    phone TEXT,
+    teams TEXT,
+    confidences TEXT,
+    comments TEXT
+)
+""")
+
+c.execute("""
+CREATE TABLE IF NOT EXISTS aliases (
+    official TEXT,
+    alias TEXT
+)
+""")
+
+c.execute("""
+CREATE TABLE IF NOT EXISTS alias_pending (
+    raw_text TEXT,
+    created_at TEXT
+)
+""")
+
+conn.commit()
+
+# ================= CONSTANTS =================
 STANDARD_TEAMS = [
-    "Arsenal", "Aston Villa", "Barcelona", "Brighton", "Chelsea",
-    "Everton", "Liverpool", "Manchester City", "Manchester United",
-    "Newcastle United", "Real Madrid", "Sevilla", "Tottenham Hotspur",
-    "Villarreal", "Atletico Madrid", "Inter Milan", "AC Milan",
-    "Juventus", "Napoli", "West Ham"
+    "Arsenal","Aston Villa","Barcelona","Brighton","Chelsea",
+    "Everton","Liverpool","Manchester City","Manchester United",
+    "Newcastle United","Real Madrid","Tottenham Hotspur",
+    "Inter Milan","AC Milan","Juventus","Napoli","West Ham"
 ]
-
-TEAM_MAP = {
-    "မန်စီး": "Manchester City",
-    "မန်ယူ": "Manchester United",
-    "လီဗာပူး": "Liverpool",
-    "အာဆင်နယ်": "Arsenal",
-    "ဘာစီလိုနာ": "Barcelona",
-    "ရီးရဲလ်": "Real Madrid",
-    "နယူး": "Newcastle United",
-    "ဘရိုက်တန်": "Brighton",
-    "ဗီလာ": "Aston Villa",
-    "စပါး": "Tottenham Hotspur",
-    "ဝက်ဟမ်း": "West Ham"
-}
 
 phone_pattern = re.compile(r"(09\d{7,9}|959\d{7,9})")
 
-# ---------------- TEAM EXTRACTOR ----------------
-def extract_team(text):
-    # 1️⃣ Myanmar dictionary
-    for k, v in TEAM_MAP.items():
-        if k in text:
-            return v
+# ================= HELPERS =================
+def normalize(text):
+    text = text.lower()
+    text = re.sub(r"[^\w\s]", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
 
-    # 2️⃣ Direct English name match
+def load_alias_map():
+    df = pd.read_sql("SELECT * FROM aliases", conn)
+    amap = {}
+    for _, r in df.iterrows():
+        amap.setdefault(r["official"], []).append(r["alias"])
+    return amap
+
+def save_pending_alias(text):
+    if len(text) < 2:
+        return
+    c.execute(
+        "SELECT 1 FROM alias_pending WHERE raw_text=?",
+        (text,)
+    )
+    if not c.fetchone():
+        c.execute(
+            "INSERT INTO alias_pending VALUES (?,?)",
+            (text, datetime.now().isoformat())
+        )
+        conn.commit()
+
+def extract_teams_with_confidence(text, alias_map):
+    text_norm = normalize(text)
+    found = []
+
+    # 1️⃣ Alias exact match
+    for official, aliases in alias_map.items():
+        for a in aliases:
+            if normalize(a) in text_norm:
+                found.append({
+                    "team": official,
+                    "confidence": 1.00
+                })
+                break
+
+    # 2️⃣ Direct English name
     for team in STANDARD_TEAMS:
-        if team.lower() in text.lower():
-            return team
+        if team.lower() in text_norm and team not in [f["team"] for f in found]:
+            found.append({
+                "team": team,
+                "confidence": 0.95
+            })
 
-    # 3️⃣ Fuzzy match (fallback)
-    if len(text) < 40:
-        match, score = process.extractOne(text, STANDARD_TEAMS)
-        if score > 85:
-            return match
+    # 3️⃣ Fuzzy fallback
+    for team in STANDARD_TEAMS:
+        if team in [f["team"] for f in found]:
+            continue
+        match, score = process.extractOne(text_norm, [team.lower()])
+        if score >= 85:
+            found.append({
+                "team": team,
+                "confidence": round(score / 100, 2)
+            })
 
-    return None
+    return found
 
-# ---------------- FILE UPLOAD ----------------
-uploaded_file = st.file_uploader("📂 Upload .txt chat file", type=["txt"])
+# ================= UI TABS =================
+tab1, tab2, tab3, tab4 = st.tabs([
+    "📂 Upload",
+    "📊 Stats",
+    "🗄 Data",
+    "🛠 Admin"
+])
 
-if uploaded_file:
-    content = uploaded_file.getvalue().decode("utf-8", errors="ignore")
-    lines = content.splitlines()
+# ================= TAB 1: UPLOAD =================
+with tab1:
+    uploaded_file = st.file_uploader("Upload .txt chat file", type=["txt"])
 
-    parsed_data = []
-    current_user = None
+    if uploaded_file:
+        alias_map = load_alias_map()
 
-    user_pattern = re.compile(r'^(.+),\s\[\d{1,2}/\d{1,2}/\d{4}')
+        content = uploaded_file.getvalue().decode("utf-8", errors="ignore")
+        lines = content.splitlines()
 
-    with st.spinner("🔍 Data ကို ခွဲခြားနေပါသည်..."):
+        parsed_users = []
+        current = None
+        user_pattern = re.compile(r'^(.+),\s\[\d{1,2}/\d{1,2}/\d{4}')
+
         for line in lines:
             line = line.strip()
             if not line:
                 continue
 
-            user_match = user_pattern.match(line)
-            if user_match:
-                if current_user:
-                    parsed_data.append(current_user)
-                current_user = {
-                    "Name": user_match.group(1),
-                    "Phone": "-",
-                    "Teams": set(),
-                    "Comments": []
+            um = user_pattern.match(line)
+            if um:
+                if current:
+                    parsed_users.append(current)
+                current = {
+                    "name": um.group(1),
+                    "phone": "-",
+                    "teams": [],
+                    "conf": [],
+                    "comments": []
                 }
                 continue
 
-            if current_user:
-                phone_match = phone_pattern.search(line)
-                if phone_match:
-                    current_user["Phone"] = phone_match.group()
+            if current:
+                ph = phone_pattern.search(line)
+                if ph:
+                    current["phone"] = ph.group()
                     continue
 
-                clean_line = re.sub(r'^\d+[\s\.\)]*', '', line)
-                if clean_line and clean_line != current_user["Name"]:
-                    team = extract_team(clean_line)
-                    if team:
-                        current_user["Teams"].add(team)
-                    else:
-                        current_user["Comments"].append(clean_line)
+                clean = re.sub(r'^\d+[\.\)]*', '', line)
+                found = extract_teams_with_confidence(clean, alias_map)
 
-    if current_user:
-        parsed_data.append(current_user)
+                if found:
+                    for f in found:
+                        if f["team"] not in current["teams"]:
+                            current["teams"].append(f["team"])
+                            current["conf"].append(f["confidence"])
+                else:
+                    current["comments"].append(clean)
+                    save_pending_alias(clean)
 
-    # ---------------- FILTER ----------------
-    st.sidebar.header("🔎 Filter")
-    selected_teams = st.sidebar.multiselect(
-        "အသင်းအလိုက် စစ်ထုတ်ရန်",
-        sorted(STANDARD_TEAMS)
-    )
+        if current:
+            parsed_users.append(current)
 
-    final_rows = []
-    for u in parsed_data:
-        if selected_teams and not any(t in u["Teams"] for t in selected_teams):
-            continue
+        for u in parsed_users:
+            c.execute(
+                "INSERT INTO users VALUES (?,?,?,?,?)",
+                (
+                    u["name"],
+                    u["phone"],
+                    ", ".join(u["teams"]),
+                    ", ".join(str(x) for x in u["conf"]),
+                    ", ".join(u["comments"])
+                )
+            )
+        conn.commit()
 
-        final_rows.append({
-            "User Name": u["Name"],
-            "Phone Number": u["Phone"],
-            "Football Teams": ", ".join(sorted(u["Teams"])),
-            "Other Comments": ", ".join(u["Comments"])
-        })
+        st.success(f"✅ {len(parsed_users)} users saved")
 
-    if final_rows:
-        df = pd.DataFrame(final_rows)
-        st.success(f"✅ တွေ့ရှိသူစုစုပေါင်း: {len(df)} ဦး")
+# ================= TAB 2: STATS =================
+with tab2:
+    df = pd.read_sql("SELECT * FROM users", conn)
+    if not df.empty:
+        all_teams = []
+        for t in df["teams"]:
+            all_teams += [x.strip() for x in t.split(",") if x]
+
+        counter = Counter(all_teams)
+        chart_df = pd.DataFrame(counter.items(), columns=["Team","Count"]).sort_values("Count")
+
+        st.metric("👥 Total Users", len(df))
+        st.metric("📞 Users with Phone", df[df["phone"] != "-"].shape[0])
+
+        st.bar_chart(chart_df.set_index("Team"))
+
+# ================= TAB 3: DATA =================
+with tab3:
+    df = pd.read_sql("SELECT * FROM users", conn)
+    if not df.empty:
         st.dataframe(df, use_container_width=True)
-
         csv = df.to_csv(index=False).encode("utf-8-sig")
         st.download_button(
-            "📥 CSV Download",
+            "📥 Download CSV",
             csv,
             "football_data.csv",
             "text/csv"
         )
+
+# ================= TAB 4: ADMIN =================
+with tab4:
+    st.subheader("🛠 Alias Admin Panel")
+
+    pending = pd.read_sql("SELECT * FROM alias_pending", conn)
+    if pending.empty:
+        st.info("No pending aliases 🎉")
+    else:
+        for _, r in pending.iterrows():
+            col1, col2, col3 = st.columns([3,3,1])
+            with col1:
+                st.text(r["raw_text"])
+            with col2:
+                team = st.selectbox(
+                    "Assign team",
+                    STANDARD_TEAMS,
+                    key=r["raw_text"]
+                )
+            with col3:
+                if st.button("Save", key=f"save_{r['raw_text']}"):
+                    c.execute(
+                        "INSERT INTO aliases VALUES (?,?)",
+                        (team, r["raw_text"])
+                    )
+                    c.execute(
+                        "DELETE FROM alias_pending WHERE raw_text=?",
+                        (r["raw_text"],)
+                    )
+                    conn.commit()
+                    st.rerun()
