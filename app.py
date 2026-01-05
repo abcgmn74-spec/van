@@ -1,160 +1,158 @@
-import streamlit as st
 import re
+import pandas as pd
 
-st.set_page_config(page_title="Telegram Prediction Analyzer", layout="wide")
-st.title("⚽ Telegram Prediction Analyzer")
+# -----------------------------
+# 1. REGEX PATTERNS
+# -----------------------------
 
-# ==================================================
-# TEAM ALIAS (Myanmar / Typo / Nickname -> English)
-# ==================================================
-TEAM_ALIAS = {
-    "Manchester United": ["မန်ယူ", "man united", "man u", "manutd"],
-    "Arsenal": ["အာဆင်နယ်", "arsenal", "aresnal"],
-    "Liverpool": ["လီဗာပူး", "liverpool"],
-    "Aston Villa": ["ဗီလာ", "အက်စတွန်ဗီလာ", "villa", "aston villa", "astonvilla"],
-    "Barcelona": ["ဘာစီ", "ဘာစီလိုနာ", "barcelona"],
-    "Chelsea": ["ချဲလ်ဆီး", "chelsea"],
-    "Brentford": ["brentford", "ဘရင့်ဖို့ဒ်", "ဘရန့်ဖို့ဒ်"],
-    "Fulham": ["fulham", "ဖူလမ်", "ဖူလ်ဟမ်"],
-    "Wolves": ["wolves", "wolf", "wolverhampton", "ဝုဗ်", "ဝုလ်ဗ်"],
-    "West Ham": ["west ham", "westham", "west ham united", "ဝက်စ်ဟမ်း"],
+USER_PATTERN = re.compile(
+    r"^(.*?),\s*\[\d{1,2}/\d{1,2}/\d{4}"
+)
+
+ACCOUNT_PATTERN = re.compile(
+    r"((?:ok\s?bet|okbet|okbest|ok\s?bet\.?|okbet_|okbet-?|ok\s?bet-|ok\s?bet/|OKBET|OK\s?BET|\.959|09|၀၉)?"
+    r"[0-9၀-၉]{6,})",
+    re.IGNORECASE
+)
+
+# -----------------------------
+# 2. TEAM ALIAS DICTIONARY
+# -----------------------------
+
+TEAM_ALIASES = {
+    "Aston Villa": [
+        "ဗီလာ", "အက်စတွန်ဗီလာ", "အက်စတန်ဗီလာ", "အက်တွန်ဗီလာ",
+        "အေဗီလာ", "aဗီလာ", "aston villa", "astonvilla", "astin villa",
+        "villa"
+    ],
+    "Arsenal": [
+        "အာဆင်နယ်", "အာဇင်နယ်", "arsenal", "aresnal", "arsen"
+    ],
+    "Barcelona": [
+        "ဘာစီလိုနာ", "ဘာစီ", "ဘာစိ", "ဘာကာ",
+        "barcelona", "bercelona", "bercelona", "barca"
+    ],
+    "Real Madrid": [
+        "ရီးရဲလ်မက်ဒရစ်", "ရီရဲလ်မက်ဒရစ်", "ရီးရဲ", "ရီရဲ", "မက်ဒရစ်",
+        "real madrid", "realmadrid", "real mardid", "real madird"
+    ],
+    "Liverpool": [
+        "လီဗာပူး", "လီဗာပူးလ်", "လီပါပူး", "လီဗားပူး",
+        "liverpool", "liverpol", "liver"
+    ],
+    "Manchester City": [
+        "မန်စီးတီး", "မန်စီတီး", "မန်းစီးတီး", "စီးတီး",
+        "man city", "mancity", "manchester city"
+    ],
+    "Manchester United": [
+        "မန်ယူ", "မန်ယူနိုက်တက်",
+        "man united", "man utd", "manunited"
+    ],
+    "Tottenham Hotspur": [
+        "စပါး", "spur", "hotspur", "tottenham"
+    ],
+    "Brighton": [
+        "ဘရိုက်တန်", "ဘရုိက်တန်",
+        "brighton"
+    ],
+    "Newcastle": [
+        "နယူးကာဆယ်", "နယူး", "နယူကာဆယ်",
+        "newcastle", "nwecastle"
+    ],
+    "Sevilla": [
+        "ဆီဗီလာ", "ဆီးဗီးလား", "ဆီးဗီလာ",
+        "sevilla"
+    ],
+    "Villarreal": [
+        "ဗီလာရီရဲလ်", "ဗီလာရီးရဲ", "ဗယ်လာရီးရဲ",
+        "villareal", "villareal", "villarreal"
+    ],
+    "Everton": [
+        "အဲဗာတန်", "အယ်ဗာတန်",
+        "everton"
+    ],
+    "West Ham": [
+        "ဝက်ဟမ်း", "ဝက်စ်ဟမ်း",
+        "west ham", "westham"
+    ],
+    "Athletic Club": [
+        "ဘီဘာအို", "ဗီဘာအို",
+        "athletic club", "bilbao"
+    ],
 }
 
-# ==================================================
-# UTILITY FUNCTIONS
-# ==================================================
-def clean_text(text: str) -> str:
+# -----------------------------
+# 3. NORMALIZE FUNCTION
+# -----------------------------
+
+def normalize(text: str) -> str:
     text = text.lower()
-    text = re.sub(r'\(.*?\)', ' ', text)          # remove (FT)
-    text = re.sub(r'\d+\s*[-:]\s*\d+', ' ', text) # remove scores 2-1
-    text = re.sub(r'\bft\b', ' ', text)           # remove ft
-    text = re.sub(r'[^\w\s]', ' ', text)          # punctuation / emoji
-    text = re.sub(r'\s+', ' ', text).strip()      # normalize spaces
+    text = re.sub(r"[^\wက-အ]", "", text)
     return text
 
-def normalize_team(text: str):
-    cleaned = clean_text(text)
-    for eng, aliases in TEAM_ALIAS.items():
-        for a in aliases:
-            if a in cleaned:
-                return eng
+# -----------------------------
+# 4. TEAM RESOLVER
+# -----------------------------
+
+def resolve_team(text: str):
+    norm = normalize(text)
+    for standard, aliases in TEAM_ALIASES.items():
+        for alias in aliases:
+            if normalize(alias) in norm or norm in normalize(alias):
+                return standard
     return None
 
-def extract_phone(text: str):
-    return re.findall(r'(09\d{7,9}|95\d{8,12})', text)
+# -----------------------------
+# 5. MAIN PARSER
+# -----------------------------
 
-# ==================================================
-# FILE UPLOAD
-# ==================================================
-uploaded = st.file_uploader("📄 Upload Telegram TXT file", type="txt")
-
-if uploaded:
-    raw_text = uploaded.read().decode("utf-8", errors="ignore")
-
-    # split by Telegram message header: "Name, [date]"
-    entries = re.split(r'\n(?=[^\n]+,\s*\[\d+/\d+/\d+)', raw_text)
-
+def parse_chat(text: str):
     rows = []
-    unknown_teams = set()
-    no = 1
+    current_user = None
 
-    # ==================================================
-    # PARSE DATA
-    # ==================================================
-    for entry in entries:
-        lines = [l.strip() for l in entry.splitlines() if l.strip()]
-        if len(lines) < 2:
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
             continue
 
-        user = lines[0].split(",")[0]
+        # USER
+        user_match = USER_PATTERN.search(line)
+        if user_match:
+            current_user = user_match.group(1)
+            continue
 
-        teams = []
-        phones = []
-
-        for line in lines[1:]:
-            phones_found = extract_phone(line)
-            if phones_found:
-                phones.extend(phones_found)
-            else:
-                team = normalize_team(line)
-                if team:
-                    if team not in teams:
-                        teams.append(team)
-                else:
-                    cleaned = clean_text(line)
-                    if cleaned and len(cleaned) > 2:
-                        unknown_teams.add(cleaned)
-
-        if teams:
+        # ACCOUNT
+        acc_match = ACCOUNT_PATTERN.search(line)
+        if acc_match:
             rows.append({
-                "No": no,
-                "User": user,
-                "Teams": teams,
-                "TeamsText": ", ".join(teams),
-                "Phone": ", ".join(phones)
+                "User": current_user,
+                "Team": None,
+                "Account": acc_match.group(1)
             })
-            no += 1
+            continue
 
-    # ==================================================
-    # FILTER UI
-    # ==================================================
-    all_teams = sorted({t for r in rows for t in r["Teams"]})
+        # TEAM
+        team = resolve_team(line)
+        if team:
+            rows.append({
+                "User": current_user,
+                "Team": team,
+                "Account": None
+            })
 
-    selected_teams = st.multiselect(
-        "🔍 Select team(s)",
-        all_teams
-    )
+    return rows
 
-    logic = st.radio(
-        "Filter logic",
-        ["OR (any selected team)", "AND (all selected teams)"]
-    )
+# -----------------------------
+# 6. RUN WITH TXT FILE
+# -----------------------------
 
-    if selected_teams:
-        if logic.startswith("AND"):
-            filtered = [
-                r for r in rows
-                if all(t in r["Teams"] for t in selected_teams)
-            ]
-        else:
-            filtered = [
-                r for r in rows
-                if any(t in r["Teams"] for t in selected_teams)
-            ]
-    else:
-        filtered = rows
+if __name__ == "__main__":
+    with open("input.txt", "r", encoding="utf-8") as f:
+        text = f.read()
 
-    # ==================================================
-    # DISPLAY MAIN TABLE
-    # ==================================================
-    st.subheader(f"📊 Result Table (Total: {len(filtered)})")
+    data = parse_chat(text)
 
-    st.dataframe(
-        [
-            {
-                "No": r["No"],
-                "User": r["User"],
-                "Teams": r["TeamsText"],
-                "Phone": r["Phone"]
-            }
-            for r in filtered
-        ],
-        use_container_width=True
-    )
+    df = pd.DataFrame(data)
+    df.to_excel("output.xlsx", index=False)
 
-    # ==================================================
-    # DISPLAY UNKNOWN TEAMS (CLEANED)
-    # ==================================================
-    st.subheader("❓ Unknown Teams / Texts (Cleaned)")
-
-    if unknown_teams:
-        st.text_area(
-            "Not recognized team names:",
-            "\n".join(sorted(unknown_teams)),
-            height=200
-        )
-    else:
-        st.write("No unknown teams found 🎉")
-
-else:
-    st.info("⬆️ TXT file ကို upload လုပ်ပါ")
+    print("✅ Done! output.xlsx generated")
