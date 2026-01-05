@@ -34,26 +34,28 @@ uploaded = st.file_uploader("📄 Upload TXT file", type="txt")
 
 if uploaded:
     raw = uploaded.read().decode("utf-8", errors="ignore")
-    blocks = raw.split("\n\n")
+
+    # 🔥 FIX: split by Telegram user header
+    entries = re.split(r'\n(?=[^\n]+,\s*\[\d+/\d+/\d+)', raw)
 
     rows = []
     no = 1
 
-    # -------- Parse ----------
-    for block in blocks:
-        lines = [l.strip() for l in block.splitlines() if l.strip()]
+    for entry in entries:
+        lines = [l.strip() for l in entry.splitlines() if l.strip()]
         if len(lines) < 2:
             continue
 
+        # User name
         user = lines[0].split(",")[0]
 
         teams = []
         phones = []
 
         for line in lines[1:]:
-            phone = extract_phone(line)
-            if phone:
-                phones.extend(phone)
+            phones_found = extract_phone(line)
+            if phones_found:
+                phones.extend(phones_found)
             else:
                 team = normalize_team(line)
                 if team and team not in teams:
@@ -69,7 +71,9 @@ if uploaded:
             })
             no += 1
 
-    # -------- UI ----------
+    # =============================
+    # FILTER UI
+    # =============================
     all_teams = sorted({t for r in rows for t in r["Teams"]})
 
     selected_teams = st.multiselect(
@@ -82,7 +86,6 @@ if uploaded:
         ["OR (any selected team)", "AND (all selected teams)"]
     )
 
-    # -------- Filter ----------
     if selected_teams:
         if logic.startswith("AND"):
             filtered = [
@@ -97,7 +100,9 @@ if uploaded:
     else:
         filtered = rows
 
-    # -------- Display ----------
+    # =============================
+    # DISPLAY
+    # =============================
     st.subheader(f"📊 Result (Total: {len(filtered)})")
 
     st.dataframe(
