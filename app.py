@@ -1,110 +1,121 @@
 import streamlit as st
 import re
-import csv
-from io import StringIO
 
 st.set_page_config(page_title="Telegram Prediction Analyzer", layout="wide")
 st.title("⚽ Telegram Prediction Analyzer")
 
-# =========================
-# TEAM INPUT
-# =========================
-team_input = st.text_input(
-    "✍️ Team names (comma separated)",
-    placeholder="Newcastle United, Chelsea, Inter Milan"
-)
+# =====================================
+# TEAM ALIAS (Myanmar / Typo → English)
+# =====================================
+TEAM_ALIAS = {
+    "Aston Villa": ["ဗီလာ", "အက်စတွန်ဗီလာ", "အက်တွန်ဗီလာ", "villa", "aston villa", "astonvilla"],
+    "Manchester City": ["မန်စီးတီး", "မန်းစီးတီး", "မန်စီးတီ", "man city", "mancity"],
+    "Manchester United": ["မန်ယူ", "man united", "man u", "manutd", "manunited"],
+    "Arsenal": ["အာဆင်နယ်", "arsenal", "aresnal"],
+    "Liverpool": ["လီဗာပူး", "လီပါပူး", "လီဗာပူးလ်", "liverpool"],
+    "Barcelona": ["ဘာစီ", "ဘာစီလိုနာ", "barcelona", "bercelona"],
+    "Real Madrid": ["ရီးရဲ", "ရီးရဲလ်", "ရီးရဲမက်ဒရစ်", "real madrid", "realmadrid"],
+    "Tottenham Hotspur": ["စပါး", "spur", "hotspur", "tottenham"],
+    "Chelsea": ["ချဲလ်ဆီး", "chelsea"],
+    "Brighton": ["ဘရိုက်တန်", "brighton"],
+    "Newcastle": ["နယူးကာဆယ်", "နယူး", "newcastle", "newcastel"],
+    "Sevilla": ["ဆီးဗီလာ", "ဆီးဗီးလား", "sevilla"],
+    "Everton": ["အဲဗာတန်", "everton"],
+    "Villarreal": ["ဗီလာရီးရဲလ်", "ဗီလာရီရဲ", "villareal", "villarreal"],
+}
 
-uploaded = st.file_uploader("📄 Upload TXT file", type="txt")
-
-def build_team_map(team_input):
-    teams = [t.strip() for t in team_input.split(",") if t.strip()]
-    team_map = {}
-    for t in teams:
-        key = t.lower()
-        team_map[t] = key
-    return team_map
-
-def detect_teams(text, team_map):
+# =====================================
+# FUNCTIONS
+# =====================================
+def normalize_team(text: str):
     text = text.lower()
-    found = []
-    for standard, key in team_map.items():
-        if key in text:
-            found.append(standard)
-    return found
+    for eng, aliases in TEAM_ALIAS.items():
+        for a in aliases:
+            if a in text:
+                return eng
+    return None
 
-def detect_phone(text):
+def extract_phone(text: str):
     return re.findall(r'(09\d{7,9}|95\d{8,12})', text)
 
-# =========================
-# MAIN LOGIC
-# =========================
-if uploaded and team_input:
-    team_map = build_team_map(team_input)
+# =====================================
+# FILE UPLOAD
+# =====================================
+uploaded = st.file_uploader("📄 Upload TXT file", type="txt")
 
-    raw = uploaded.read().decode("utf-8")
-    blocks = raw.split("\n\n")
+if uploaded:
+    raw_text = uploaded.read().decode("utf-8", errors="ignore")
+    blocks = raw_text.split("\n\n")
 
-    clean_data = []
-    no_team_msgs = []
+    rows = []
+    no = 1
 
+    # -----------------------------
+    # PARSE DATA
+    # -----------------------------
     for block in blocks:
-        lines = block.strip().splitlines()
+        lines = [l.strip() for l in block.splitlines() if l.strip()]
         if len(lines) < 2:
             continue
 
-        user = lines[0].split(",")[0].strip()
-        full_text = " ".join(lines)
+        user = lines[0].split(",")[0]
 
-        teams = detect_teams(full_text, team_map)
-        phones = detect_phone(full_text)
+        teams = []
+        phones = []
 
-        if not teams:
-            no_team_msgs.append(block)
-            continue
+        for line in lines[1:]:
+            phone = extract_phone(line)
+            if phone:
+                phones.extend(phone)
+            else:
+                team = normalize_team(line)
+                if team and team not in teams:
+                    teams.append(team)
 
-        clean_data.append({
-            "User": user,
-            "Teams": ", ".join(teams),
-            "Phone": ", ".join(phones)
-        })
+        if teams or phones:
+            rows.append({
+                "No": no,
+                "User": user,
+                "Teams": teams,                # list (for filter)
+                "TeamsText": ", ".join(teams), # string (for display)
+                "Phone": ", ".join(phones)
+            })
+            no += 1
 
-    # =========================
-    # DISPLAY
-    # =========================
-    st.subheader("✅ Clean Predictions")
-    st.table(clean_data)
+    # -----------------------------
+    # TEAM FILTER UI
+    # -----------------------------
+    all_teams = sorted({t for r in rows for t in r["Teams"]})
 
-    # =========================
-    # FILTER BY TEAM
-    # =========================
-    st.subheader("🔍 Filter by Team")
-    selected_team = st.selectbox("Choose team", list(team_map.keys()))
-
-    filtered = [d for d in clean_data if selected_team in d["Teams"]]
-    st.table(filtered)
-
-    # =========================
-    # NO TEAM MESSAGES
-    # =========================
-    st.subheader("❌ Messages without selected teams")
-    st.text_area("Filtered messages", "\n\n".join(no_team_msgs), height=200)
-
-    # =========================
-    # CSV EXPORT
-    # =========================
-    csv_buffer = StringIO()
-    writer = csv.DictWriter(csv_buffer, fieldnames=["User", "Teams", "Phone"])
-    writer.writeheader()
-    writer.writerows(clean_data)
-
-    st.download_button(
-        "⬇️ Download CSV",
-        csv_buffer.getvalue(),
-        "predictions_cleaned.csv",
-        "text/csv"
+    selected_teams = st.multiselect(
+        "🔍 ရွေးထားတဲ့ အသင်းတွေကို ခန့်မှန်းထားတဲ့ user တွေကိုပဲ ပြမယ်",
+        all_teams
     )
 
-elif not team_input:
-    st.info("👆 Team name တွေကို အရင်ထည့်ပါ (comma separated)")
+    if selected_teams:
+        filtered_rows = [
+            r for r in rows
+            if any(t in r["Teams"] for t in selected_teams)
+        ]
+    else:
+        filtered_rows = rows
+
+    # -----------------------------
+    # DISPLAY TABLE
+    # -----------------------------
+    st.subheader(f"📊 Result Table (Total: {len(filtered_rows)})")
+
+    display_rows = [
+        {
+            "No": r["No"],
+            "User": r["User"],
+            "Teams": r["TeamsText"],
+            "Phone": r["Phone"]
+        }
+        for r in filtered_rows
+    ]
+
+    st.dataframe(display_rows, use_container_width=True)
+
 else:
-    st.info("📄 TXT file upload လုပ်ပါ")
+    st.info("⬆️ TXT file ကို အရင် upload လုပ်ပါ")
