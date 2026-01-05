@@ -1,33 +1,26 @@
 import streamlit as st
 import re
 
-st.set_page_config(page_title="Telegram Prediction Analyzer", layout="wide")
-st.title("⚽ Telegram Prediction Analyzer")
+st.title("Telegram Prediction Chart")
 
-# =====================================
-# TEAM ALIAS (Myanmar / Typo → English)
-# =====================================
+uploaded = st.file_uploader("Upload TXT file", type="txt")
+
+# ----------------------------
+# TEAM ALIAS (Myanmar -> English)
+# ----------------------------
 TEAM_ALIAS = {
-    "Aston Villa": ["ဗီလာ", "အက်စတွန်ဗီလာ", "အက်တွန်ဗီလာ", "villa", "aston villa", "astonvilla"],
-    "Manchester City": ["မန်စီးတီး", "မန်းစီးတီး", "မန်စီးတီ", "man city", "mancity"],
-    "Manchester United": ["မန်ယူ", "man united", "man u", "manutd", "manunited"],
-    "Arsenal": ["အာဆင်နယ်", "arsenal", "aresnal"],
-    "Liverpool": ["လီဗာပူး", "လီပါပူး", "လီဗာပူးလ်", "liverpool"],
-    "Barcelona": ["ဘာစီ", "ဘာစီလိုနာ", "barcelona", "bercelona"],
-    "Real Madrid": ["ရီးရဲ", "ရီးရဲလ်", "ရီးရဲမက်ဒရစ်", "real madrid", "realmadrid"],
+    "Aston Villa": ["ဗီလာ", "အက်စတွန်ဗီလာ", "အက်တွန်ဗီလာ", "villa", "aston villa"],
+    "Manchester City": ["မန်စီးတီး", "မန်းစီးတီး", "man city", "mancity"],
+    "Manchester United": ["မန်ယူ", "man united", "man u", "manutd"],
+    "Arsenal": ["အာဆင်နယ်", "arsenal"],
+    "Liverpool": ["လီဗာပူး", "လီပါပူး", "liverpool"],
+    "Barcelona": ["ဘာစီ", "ဘာစီလိုနာ", "barcelona"],
+    "Real Madrid": ["ရီးရဲ", "ရီးရဲလ်", "ရီးရဲမက်ဒရစ်", "real madrid"],
     "Tottenham Hotspur": ["စပါး", "spur", "hotspur", "tottenham"],
     "Chelsea": ["ချဲလ်ဆီး", "chelsea"],
-    "Brighton": ["ဘရိုက်တန်", "brighton"],
-    "Newcastle": ["နယူးကာဆယ်", "နယူး", "newcastle", "newcastel"],
-    "Sevilla": ["ဆီးဗီလာ", "ဆီးဗီးလား", "sevilla"],
-    "Everton": ["အဲဗာတန်", "everton"],
-    "Villarreal": ["ဗီလာရီးရဲလ်", "ဗီလာရီရဲ", "villareal", "villarreal"],
 }
 
-# =====================================
-# FUNCTIONS
-# =====================================
-def normalize_team(text: str):
+def normalize_team(text):
     text = text.lower()
     for eng, aliases in TEAM_ALIAS.items():
         for a in aliases:
@@ -35,24 +28,19 @@ def normalize_team(text: str):
                 return eng
     return None
 
-def extract_phone(text: str):
+def extract_phone(text):
     return re.findall(r'(09\d{7,9}|95\d{8,12})', text)
 
-# =====================================
-# FILE UPLOAD
-# =====================================
-uploaded = st.file_uploader("📄 Upload TXT file", type="txt")
-
+# ----------------------------
+# MAIN
+# ----------------------------
 if uploaded:
-    raw_text = uploaded.read().decode("utf-8", errors="ignore")
-    blocks = raw_text.split("\n\n")
+    raw = uploaded.read().decode("utf-8")
+    blocks = raw.split("\n\n")
 
     rows = []
     no = 1
 
-    # -----------------------------
-    # PARSE DATA
-    # -----------------------------
     for block in blocks:
         lines = [l.strip() for l in block.splitlines() if l.strip()]
         if len(lines) < 2:
@@ -76,46 +64,10 @@ if uploaded:
             rows.append({
                 "No": no,
                 "User": user,
-                "Teams": teams,                # list (for filter)
-                "TeamsText": ", ".join(teams), # string (for display)
+                "Teams": ", ".join(teams),
                 "Phone": ", ".join(phones)
             })
             no += 1
 
-    # -----------------------------
-    # TEAM FILTER UI
-    # -----------------------------
-    all_teams = sorted({t for r in rows for t in r["Teams"]})
-
-    selected_teams = st.multiselect(
-        "🔍 ရွေးထားတဲ့ အသင်းတွေကို ခန့်မှန်းထားတဲ့ user တွေကိုပဲ ပြမယ်",
-        all_teams
-    )
-
-    if selected_teams:
-        filtered_rows = [
-            r for r in rows
-            if any(t in r["Teams"] for t in selected_teams)
-        ]
-    else:
-        filtered_rows = rows
-
-    # -----------------------------
-    # DISPLAY TABLE
-    # -----------------------------
-    st.subheader(f"📊 Result Table (Total: {len(filtered_rows)})")
-
-    display_rows = [
-        {
-            "No": r["No"],
-            "User": r["User"],
-            "Teams": r["TeamsText"],
-            "Phone": r["Phone"]
-        }
-        for r in filtered_rows
-    ]
-
-    st.dataframe(display_rows, use_container_width=True)
-
-else:
-    st.info("⬆️ TXT file ကို အရင် upload လုပ်ပါ")
+    st.subheader(f"Result Table (Total: {len(rows)})")
+    st.dataframe(rows, use_container_width=True)
