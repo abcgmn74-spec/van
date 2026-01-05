@@ -7,12 +7,7 @@ import os
 st.set_page_config(page_title="Team Parser (Raw + Learning)", page_icon="⚽")
 st.title("⚽ Football Team Parser (Raw + Learning Architecture)")
 
-UPLOAD_HELP = """
-• User ရိုက်ထားတဲ့ team စာလုံးတွေကို **မပြင်ပါ**
-• Admin က correct team ကို နောက်ကွယ်မှာ map လုပ်နိုင်ပါတယ်
-"""
-
-uploaded_file = st.file_uploader("📄 TXT file တင်ပါ", type=["txt"], help=UPLOAD_HELP)
+uploaded_file = st.file_uploader("📄 TXT file တင်ပါ", type=["txt"])
 
 # -------------------------------------------------
 # Persistent learning storage
@@ -25,46 +20,45 @@ else:
     LEARNED_MAP = {}
 
 STANDARD_TEAMS = [
-    "Aston Villa", "Barcelona", "Real Madrid", "Arsenal", "Liverpool",
-    "Man City", "Man United", "Tottenham", "Brighton", "Newcastle",
-    "Sevilla", "Everton", "West Ham", "Villarreal", "Athletic Club",
-    "Wolves", "Brentford", "Leeds", "Fulham", "Forest", "Osasuna"
+    "Aston Villa","Barcelona","Real Madrid","Arsenal","Liverpool",
+    "Man City","Man United","Tottenham","Brighton","Newcastle",
+    "Sevilla","Everton","West Ham","Villarreal","Athletic Club",
+    "Wolves","Brentford","Leeds","Fulham","Forest","Osasuna",
+    "Elche","Espanyol","Burnley","Bournemouth","Sunderland",
+    "Celta Vigo","Osasuna","Chelsea","Marseille","Lorient","Metz"
 ]
 
 # -------------------------------------------------
 # Helpers
 # -------------------------------------------------
-def clean_name(line: str) -> str:
+def clean_name(line):
     return re.sub(r",\s*\[.*?\]", "", line).strip()
 
-def extract_phone(text: str) -> str:
-    phones = re.findall(r"(?:\+?959|09)\d{7,9}", text)
+def extract_phone(text):
+    phones = re.findall(r"(?:\+?959|09)\d{7,12}", text.replace(" ", ""))
     return phones[0] if phones else ""
 
-def is_non_team_line(line: str) -> bool:
-    return bool(re.search(r"(okbet|slot|phone|bet|\d)", line.lower()))
+def is_non_team_line(line):
+    return bool(re.search(r"(okbet|slot|bet|\d{5,})", line.lower()))
 
 def extract_raw_teams(lines):
     raw = []
     for line in lines:
         if is_non_team_line(line):
             continue
-        # remove numbering like 1. 2)
-        clean = re.sub(r"^[\d\W]+", "", line).strip()
+        clean = re.sub(r"^[\W\d]+", "", line).strip()
         if clean:
             raw.append(clean)
     return raw
 
-def normalize_teams(raw_teams):
+def normalize_teams(raw):
     normalized = []
     unknown = []
-
-    for t in raw_teams:
+    for t in raw:
         if t in LEARNED_MAP:
             normalized.append(LEARNED_MAP[t])
         else:
             unknown.append(t)
-
     return normalized, unknown
 
 # -------------------------------------------------
@@ -72,9 +66,14 @@ def normalize_teams(raw_teams):
 # -------------------------------------------------
 if uploaded_file:
     content = uploaded_file.read().decode("utf-8")
-    blocks = content.split("\n\n")
 
-    user_records = []
+    # 🔑 FIX: split by Telegram timestamp
+    blocks = re.split(
+        r"(?=\n?.+?,\s*\[\d{1,2}/\d{1,2}/\d{4})",
+        content
+    )
+
+    records = []
     unknown_pool = set()
 
     for block in blocks:
@@ -90,41 +89,30 @@ if uploaded_file:
 
         unknown_pool.update(unknown)
 
-        user_records.append({
+        records.append({
             "Name": name,
             "Phone": phone,
             "Raw Teams (User Input)": ", ".join(raw_teams),
             "Normalized Teams (System)": ", ".join(normalized)
         })
 
-    df = pd.DataFrame(user_records)
+    df = pd.DataFrame(records)
 
-    # -------------------------------------------------
-    # USER VIEW
-    # -------------------------------------------------
+    st.success(f"✅ Total users parsed: {len(df)}")
+
+    # ---------------- USER VIEW ----------------
     st.subheader("🟢 User Data (RAW – မပြင်)")
-    st.dataframe(
-        df[["Name", "Phone", "Raw Teams (User Input)"]],
-        use_container_width=True
-    )
+    st.dataframe(df[["Name", "Phone", "Raw Teams (User Input)"]],
+                 use_container_width=True)
 
-    # -------------------------------------------------
-    # SYSTEM VIEW
-    # -------------------------------------------------
+    # ---------------- SYSTEM VIEW ----------------
     st.subheader("🔵 System View (Learned)")
-    st.dataframe(
-        df[["Name", "Normalized Teams (System)"]],
-        use_container_width=True
-    )
+    st.dataframe(df[["Name", "Normalized Teams (System)"]],
+                 use_container_width=True)
 
-    # -------------------------------------------------
-    # ADMIN LEARNING ROLL
-    # -------------------------------------------------
+    # ---------------- ADMIN LEARNING ----------------
     st.subheader("🧠 Admin Learning Roll")
-
     if unknown_pool:
-        st.info("အောက်က RAW team တွေကို admin က correct team နဲ့ map လုပ်နိုင်ပါတယ်")
-
         raw_word = st.selectbox("RAW Team (User Input)", sorted(unknown_pool))
         correct_team = st.selectbox("Correct Team", STANDARD_TEAMS)
 
@@ -133,14 +121,11 @@ if uploaded_file:
             with open(LEARN_FILE, "w", encoding="utf-8") as f:
                 json.dump(LEARNED_MAP, f, ensure_ascii=False, indent=2)
 
-            st.success(f"Learned: '{raw_word}' → '{correct_team}'")
-            st.info("App ကို rerun လုပ်ပါ (learning အသစ်သုံးမယ်)")
+            st.success(f"Learned: {raw_word} → {correct_team}")
+            st.info("Re-run app to apply learning")
     else:
         st.success("Unknown team မရှိပါ 🎉")
 
-    # -------------------------------------------------
-    # EXPORT
-    # -------------------------------------------------
     st.download_button(
         "⬇️ Download CSV (Raw + Normalized)",
         df.to_csv(index=False),
