@@ -12,7 +12,7 @@ from datetime import datetime
 # PAGE CONFIG
 # =================================================
 st.set_page_config(page_title="Telegram TXT Parser", page_icon="📄", layout="wide")
-st.title("📄 Telegram TXT Parser (Username / Team / User Acc / Other Comment)")
+st.title("📄 Telegram TXT Parser (Team / Other Comment / User Acc)")
 
 uploaded_file = st.file_uploader("TXT file တင်ပါ", type=["txt"])
 
@@ -23,7 +23,7 @@ LEARN_FILE = "team_learning.json"
 HISTORY_FILE = "team_learning_history.json"
 
 # =================================================
-# LOAD / SAVE HELPERS
+# LOAD / SAVE
 # =================================================
 def load_json(path, default):
     if os.path.exists(path):
@@ -49,78 +49,125 @@ STANDARD_TEAMS = [
     "Liverpool","Arsenal","Chelsea","Tottenham","Newcastle",
     "Brighton","Aston Villa","Everton","West Ham","Sevilla",
     "Villarreal","Athletic Club","Wolves","Brentford","Leeds",
-    "Fulham","Forest","Burnley","Bournemouth"
+    "Fulham","Forest","Burnley","Bournemouth","Celta Vigo"
 ]
 
 # =================================================
-# MYANMAR TEAM ALIAS (SAFE)
+# MYANMAR / REAL-WORLD ALIAS (FROM YOUR DATA)
 # =================================================
 MYANMAR_TEAM_ALIAS = {
-    "အာဆင်နယ်": "Arsenal","အာစင်နယ်": "Arsenal",
-    "လီဗာပူး": "Liverpool","လီဗာပူးလ်": "Liverpool","လီပ": "Liverpool",
-    "ဘာစီ": "Barcelona","ဘာစီလိုနာ": "Barcelona",
-    "ရီးရဲ": "Real Madrid","ရီးရဲလ်": "Real Madrid","မက်ဒရစ်": "Real Madrid",
-    "မန်စီးတီး": "Manchester City","စီးတီး": "Manchester City","စီတီ": "Manchester City",
-    "မန်ယူ": "Manchester United","မန္ယူ": "Manchester United",
-    "စပါး": "Tottenham",
-    "ဗီလာ": "Aston Villa",
-    "ဘရိုက်တန်": "Brighton",
+    # Manchester City
+    "man city": "Manchester City",
+    "man city.": "Manchester City",
+    "man city ": "Manchester City",
+    "man city,": "Manchester City",
+    "မန်စီးတီး": "Manchester City",
+    "စီးတီး": "Manchester City",
+    "စီတီ": "Manchester City",
+
+    # Manchester United
+    "man united": "Manchester United",
+    "man u": "Manchester United",
+    "man unnited": "Manchester United",
+    "မန်ယူ": "Manchester United",
+
+    # Real Madrid
+    "ရီးရဲ": "Real Madrid",
+    "ရီးရယ်": "Real Madrid",
+    "ရီးရဲလ်": "Real Madrid",
+    "ရီးရဲမက်ဒရစ်": "Real Madrid",
+    "ရီးရဲလ်မက်ဒရစ်": "Real Madrid",
+    "ရီရဲ": "Real Madrid",
+    "ရီရဲလ်": "Real Madrid",
+    "ရီရဲမက်ဒရစ်": "Real Madrid",
+
+    # Liverpool
+    "လီပါပူး": "Liverpool",
+    "လီပါပူးး": "Liverpool",
+    "လီပါဘူး": "Liverpool",
+    "လီပါပူလ်း": "Liverpool",
+
+    # Villarreal
+    "ဗီလာရီရဲ": "Villarreal",
+    "ဗီလာရီးရဲ": "Villarreal",
+    "ဗီလာရီးရဲလ်": "Villarreal",
+    "ဗီလာရီရဲလ်": "Villarreal",
+    "ဗယ်လာရီးရဲလ်": "Villarreal",
+
+    # Newcastle
+    "နယူး": "Newcastle",
     "နယူးကာဆယ်": "Newcastle",
-    "ဆီးဗီလာ": "Sevilla",
-    "အဲဗာတန်": "Everton",
-    "ဝက်ဟမ်း": "West Ham"
+    "နယူကာဆယ်": "Newcastle",
+    "နယူးကားဆယ်": "Newcastle",
+
+    # Brighton
+    "ဘရိုတ်တန်": "Brighton",
+    "ဘရိုက်တန်": "Brighton",
+    "ဘရုိက်တန်": "Brighton",
+
+    # Aston Villa
+    "aston villa": "Aston Villa",
+    "aston viIIa": "Aston Villa",
+    "ဗီလာ": "Aston Villa",
+
+    # West Ham
+    "west ham": "West Ham",
+    "ဝက်စ်ဟမ်း": "West Ham",
+
+    # Forest
+    "ဖော့ရက်စ်": "Forest",
+
+    # Brentford
+    "ဘရက်ဖို့": "Brentford",
+    "ဘရက်ဗိုလ်": "Brentford",
+
+    # Sevilla
+    "ဆီဗီလာ": "Sevilla",
+
+    # Fulham
+    "ဖူဟမ်": "Fulham",
+
+    # Wolves
+    "wolves": "Wolves",
+
+    # Athletic Club
+    "athletic club": "Athletic Club",
+
+    # Tottenham
+    "tottenham hotspur": "Tottenham",
+    "စပါး": "Tottenham",
+
+    # Celta Vigo
+    "celta vigo": "Celta Vigo"
 }
 
 # =================================================
 # REGEX
 # =================================================
-USER_HEADER = re.compile(
-    r"^(.+?),\s*\[\d{1,2}/\d{1,2}/\d{4}\s+\d{1,2}:\d{2}\s+(AM|PM)\]$"
-)
 PHONE_PATTERN = re.compile(r"(?:\+?959|09)\d{7,12}")
 USER_ACC_KEYWORDS = re.compile(r"(ok\s*bet|okbet|slot|shank|bet)", re.I)
 
 # =================================================
 # HELPERS
 # =================================================
-def extract_username(line):
-    m = USER_HEADER.match(line)
-    return m.group(1).strip() if m else None
-
 def is_user_acc(line):
     return bool(PHONE_PATTERN.search(line) or USER_ACC_KEYWORDS.search(line))
-
-def clean_team(line):
-    return re.sub(r"^[\d\.\-\)\s]+", "", line).strip()
 
 def normalize_raw_token(text: str) -> str:
     if not text:
         return ""
     cleaned = re.sub(r"^[^က-႟A-Za-z]+|[^က-႟A-Za-z]+$", "", text)
-    return cleaned.strip()
+    return cleaned.strip().lower()
 
 def is_other_comment(token: str) -> bool:
     if not token:
         return True
-
-    t = token.strip()
-
-    if len(t) >= 20:
+    if len(token) >= 20:
         return True
-
-    if " " in t and not any(k in t.lower() for k in ["city", "united"]):
+    if " " in token and token not in MYANMAR_TEAM_ALIAS:
         return True
-
-    COMMENT_KEYWORDS = [
-        "ကြိုက်","မကြိုက်","ပါ","မပါ","ok","okay","confirm",
-        "အားပေး","ထည့်","မထည့်","ယူ","မယူ","ရ","မရ"
-    ]
-    if any(k in t.lower() for k in COMMENT_KEYWORDS):
+    if re.fullmatch(r"[A-Za-z]{3,}(?:\s+[A-Za-z]{3,}){1,2}", token):
         return True
-
-    if re.fullmatch(r"[A-Za-z]{3,}(?:\s+[A-Za-z]{3,}){1,2}", t):
-        return True
-
     return False
 
 def normalize_team(raw_team):
@@ -135,7 +182,7 @@ def normalize_team(raw_team):
     if raw in MYANMAR_TEAM_ALIAS:
         return MYANMAR_TEAM_ALIAS[raw], "team"
 
-    match = get_close_matches(raw, STANDARD_TEAMS, n=1, cutoff=0.85)
+    match = get_close_matches(raw.title(), STANDARD_TEAMS, n=1, cutoff=0.85)
     if match:
         return match[0], "team"
 
@@ -149,73 +196,49 @@ def normalize_team(raw_team):
 # =================================================
 if uploaded_file:
     text = uploaded_file.read().decode("utf-8")
+    lines = [l.strip() for l in text.split("\n") if l.strip()]
 
-    blocks = re.split(
-        r"(?=^.+?,\s*\[\d{1,2}/\d{1,2}/\d{4}\s+\d{1,2}:\d{2}\s+(AM|PM)\])",
-        text,
-        flags=re.MULTILINE
-    )
+    teams_std, other_comments, unknown_list, user_acc = [], [], [], []
 
-    records = []
-    unknown_list = []
-
-    for block in blocks:
-        lines = [l.strip() for l in block.split("\n") if l.strip()]
-        if not lines:
+    for line in lines:
+        if is_user_acc(line):
+            user_acc.append(line)
             continue
 
-        username = extract_username(lines[0])
-        if not username:
-            continue
+        std, kind = normalize_team(line)
 
-        teams_raw, teams_std, user_acc, other_comments = [], [], [], []
+        if kind == "team":
+            teams_std.append(std)
+        elif kind == "other":
+            other_comments.append(line)
+        else:
+            unknown_list.append(line)
 
-        for line in lines[1:]:
-            if is_user_acc(line):
-                user_acc.append(line)
-            else:
-                raw = clean_team(line)
-                if not raw:
-                    continue
+    df = pd.DataFrame({
+        "Teams (STANDARD)": list(dict.fromkeys(teams_std)),
+        "Other Comment": list(dict.fromkeys(other_comments)),
+        "Unknown": list(dict.fromkeys(unknown_list)),
+        "User Acc": list(dict.fromkeys(user_acc))
+    })
 
-                std, kind = normalize_team(raw)
-
-                if kind == "team":
-                    teams_raw.append(raw)
-                    teams_std.append(std)
-                elif kind == "other":
-                    other_comments.append(raw)
-                else:
-                    unknown_list.append(raw)
-
-        records.append({
-            "Username": username,
-            "Teams (RAW)": ", ".join(dict.fromkeys(teams_raw)),
-            "Teams (STANDARD)": ", ".join(dict.fromkeys(teams_std)),
-            "Other Comment": ", ".join(dict.fromkeys(other_comments)),
-            "User Acc": ", ".join(user_acc)
-        })
-
-    df = pd.DataFrame(records)
-    st.success(f"✅ Parsed users: {len(df)}")
+    st.success("✅ Parsing completed")
     st.dataframe(df, use_container_width=True)
 
     # =================================================
-    # ADMIN ROLL – UNKNOWN TEAMS
+    # ADMIN ROLL – UNKNOWN
     # =================================================
-    st.subheader("🔴 Admin Roll – Unknown Teams")
-
     if unknown_list:
+        st.subheader("🔴 Admin Roll – Unknown Teams")
         counter = Counter(unknown_list)
         options = [f"{k} ({v})" for k,v in counter.items()]
 
-        selected = st.multiselect("Unknown Teams", options)
+        selected = st.multiselect("Unknown", options)
         correct_team = st.selectbox("Correct Standard Team", STANDARD_TEAMS)
 
         if st.button("💾 Apply & Save"):
             raw_items = []
             for item in selected:
-                raw = item.rsplit("(",1)[0].strip()
+                raw = normalize_raw_token(item.rsplit("(",1)[0])
                 LEARNED_MAP[raw] = correct_team
                 raw_items.append(raw)
 
@@ -228,24 +251,20 @@ if uploaded_file:
                 "snapshot": LEARNED_MAP.copy()
             })
             atomic_save(HISTORY_FILE, HISTORY)
-
             st.success("✅ Mapping saved permanently")
 
     # =================================================
     # HISTORY RESTORE
     # =================================================
-    st.subheader("🕒 Mapping History (Restore)")
-
     if HISTORY:
+        st.subheader("🕒 Mapping History")
         labels = [
-            f"{h['time']} | {len(h['raw_items'])} items → {h['mapped_to']}"
+            f"{h['time']} | {len(h['raw_items'])} → {h['mapped_to']}"
             for h in HISTORY
         ]
-
-        idx = st.selectbox("History ရွေးပါ", range(len(labels)),
+        idx = st.selectbox("Restore point", range(len(labels)),
                            format_func=lambda i: labels[i])
-
-        if st.button("↩️ Restore Selected"):
+        if st.button("↩️ Restore"):
             LEARNED_MAP.clear()
             LEARNED_MAP.update(HISTORY[idx]["snapshot"])
             atomic_save(LEARN_FILE, LEARNED_MAP)
@@ -254,6 +273,6 @@ if uploaded_file:
     st.download_button(
         "⬇️ Download CSV",
         df.to_csv(index=False),
-        file_name="telegram_team_parser.csv",
+        file_name="parsed_result.csv",
         mime="text/csv"
     )
