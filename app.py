@@ -8,14 +8,14 @@ from difflib import get_close_matches
 from collections import Counter
 from datetime import datetime
 
-# ================= HF (FREE) =================
+# ================= HF (LOW-RAM SAFE) =================
 from transformers import pipeline
 
 @st.cache_resource
 def load_hf_classifier():
     return pipeline(
         "zero-shot-classification",
-        model="facebook/bart-large-mnli"
+        model="typeform/distilbert-base-uncased-mnli"  # LOW RAM
     )
 
 hf_classifier = load_hf_classifier()
@@ -32,7 +32,6 @@ uploaded_file = st.file_uploader("TXT file တင်ပါ", type=["txt"])
 # FILE PATHS
 # =================================================
 LEARN_FILE = "team_learning.json"
-HISTORY_FILE = "team_learning_history.json"
 
 # =================================================
 # LOAD / SAVE
@@ -51,7 +50,6 @@ def atomic_save(path, data):
     os.replace(temp, path)
 
 LEARNED_MAP = load_json(LEARN_FILE, {})
-HISTORY = load_json(HISTORY_FILE, [])
 
 # =================================================
 # STANDARD TEAMS
@@ -65,7 +63,7 @@ STANDARD_TEAMS = [
 ]
 
 # =================================================
-# MYANMAR / REAL-WORLD ALIAS (SAFE)
+# MYANMAR / COMMON ALIAS (SAFE)
 # =================================================
 MYANMAR_TEAM_ALIAS = {
     "man city": "Manchester City",
@@ -74,6 +72,7 @@ MYANMAR_TEAM_ALIAS = {
     "မန်စီးတီး": "Manchester City",
     "ရီးရဲ": "Real Madrid",
     "ရီးရဲလ်": "Real Madrid",
+    "ရီးရဲမက်ဒရစ်": "Real Madrid",
     "လီပါပူး": "Liverpool",
     "ဗီလာရီးရဲလ်": "Villarreal",
     "နယူး": "Newcastle",
@@ -109,18 +108,13 @@ def normalize_raw_token(text: str) -> str:
     cleaned = re.sub(r"^[^က-႟A-Za-z]+|[^က-႟A-Za-z]+$", "", text)
     return cleaned.strip().lower()
 
-# ---------------- HF AI (Suggest / Classify only)
+# -------- HF AI (CLASSIFY ONLY)
 def hf_classify(text: str) -> str:
     labels = ["football team", "person name", "comment"]
     result = hf_classifier(text, labels)
-    return result["labels"][0]   # best label only
-
-def hf_team_suggest(text: str) -> str:
-    labels = STANDARD_TEAMS
-    result = hf_classifier(text, labels)
     return result["labels"][0]
 
-# ---------------- Rule-based decision
+# -------- MAIN NORMALIZER
 def normalize_team(raw_team):
     raw = normalize_raw_token(raw_team)
 
@@ -128,7 +122,7 @@ def normalize_team(raw_team):
     if raw in LEARNED_MAP:
         return LEARNED_MAP[raw], "team", "admin"
 
-    # 2️⃣ Myanmar alias
+    # 2️⃣ Alias
     if raw in MYANMAR_TEAM_ALIAS:
         return MYANMAR_TEAM_ALIAS[raw], "team", "alias"
 
@@ -137,15 +131,14 @@ def normalize_team(raw_team):
     if match:
         return match[0], "team", "fuzzy"
 
-    # 4️⃣ HF AI classify (suggest only)
+    # 4️⃣ HF AI classify (SAFE)
     ai_type = hf_classify(raw_team)
 
     if ai_type != "football team":
         return raw_team, "other", "ai"
 
-    # football team but unknown → AI suggest standard
-    ai_team = hf_team_suggest(raw_team)
-    return raw_team, "unknown", f"ai-suggest:{ai_team}"
+    # football team but unknown spelling
+    return raw_team, "unknown", "ai-suggest"
 
 # =================================================
 # MAIN
@@ -204,7 +197,7 @@ if uploaded_file:
     # ADMIN ROLL – UNKNOWN
     # =================================================
     if unknown_list:
-        st.subheader("🔴 Admin Roll – Unknown Teams (AI Suggest shown)")
+        st.subheader("🔴 Admin Roll – Unknown Teams (HF AI assisted)")
         counter = Counter(unknown_list)
         options = [f"{k} ({v})" for k,v in counter.items()]
 
@@ -217,13 +210,4 @@ if uploaded_file:
                 LEARNED_MAP[raw] = correct_team
 
             atomic_save(LEARN_FILE, LEARNED_MAP)
-
-            HISTORY.append({
-                "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "items": selected,
-                "mapped_to": correct_team,
-                "snapshot": LEARNED_MAP.copy()
-            })
-            atomic_save(HISTORY_FILE, HISTORY)
-
             st.success("✅ Mapping saved permanently")
