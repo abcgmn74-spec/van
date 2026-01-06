@@ -23,7 +23,7 @@ LEARN_FILE = "team_learning.json"
 HISTORY_FILE = "team_learning_history.json"
 
 # =================================================
-# LOAD / SAVE HELPERS
+# LOAD / SAVE
 # =================================================
 def load_json(path, default):
     if os.path.exists(path):
@@ -53,6 +53,27 @@ STANDARD_TEAMS = [
 ]
 
 # =================================================
+# MYANMAR AUTO ALIAS (SAFE)
+# =================================================
+MYANMAR_TEAM_ALIAS = {
+    "အာဆင်နယ်": "Arsenal",
+    "အာစင်နယ်": "Arsenal",
+    "လီဗာပူး": "Liverpool",
+    "လီဗာပူးလ်": "Liverpool",
+    "ဘာစီ": "Barcelona",
+    "ဘာစီလိုနာ": "Barcelona",
+    "ရီးရဲ": "Real Madrid",
+    "ရီးရဲမဒရစ်": "Real Madrid",
+    "မန်စီးတီး": "Manchester City",
+    "မန်ယူ": "Manchester United",
+    "စပါး": "Tottenham",
+    "အက်စတန်ဗီလာ": "Aston Villa",
+    "ဗီလာ": "Aston Villa",
+    "ဘရိုက်တန်": "Brighton",
+    "နယူးကာဆယ်": "Newcastle"
+}
+
+# =================================================
 # REGEX
 # =================================================
 USER_HEADER = re.compile(
@@ -75,14 +96,23 @@ def clean_team(line):
     return re.sub(r"^[\d\.\-\)\s]+", "", line).strip()
 
 def normalize_team(raw_team):
-    if raw_team in LEARNED_MAP:
-        return LEARNED_MAP[raw_team], False
+    raw = raw_team.strip()
 
-    match = get_close_matches(raw_team, STANDARD_TEAMS, n=1, cutoff=0.85)
+    # 1️⃣ Admin learned (highest priority)
+    if raw in LEARNED_MAP:
+        return LEARNED_MAP[raw], False
+
+    # 2️⃣ Myanmar alias auto
+    if raw in MYANMAR_TEAM_ALIAS:
+        return MYANMAR_TEAM_ALIAS[raw], False
+
+    # 3️⃣ English fuzzy (safe)
+    match = get_close_matches(raw, STANDARD_TEAMS, n=1, cutoff=0.85)
     if match:
         return match[0], False
 
-    return raw_team, True
+    # 4️⃣ Unknown
+    return raw, True
 
 # =================================================
 # MAIN
@@ -135,9 +165,9 @@ if uploaded_file:
     st.dataframe(df, use_container_width=True)
 
     # =================================================
-    # ADMIN ROLL – APPLY MAPPING (WITH HISTORY)
+    # ADMIN ROLL + HISTORY
     # =================================================
-    st.subheader("🔴 Admin Roll – Apply Mapping")
+    st.subheader("🔴 Admin Roll – Unknown Teams")
 
     if unknown_list:
         counter = Counter(unknown_list)
@@ -163,11 +193,8 @@ if uploaded_file:
             })
             atomic_save(HISTORY_FILE, HISTORY)
 
-            st.success("✅ Mapping saved with history")
+            st.success("✅ Mapping saved permanently")
 
-    # =================================================
-    # ADMIN HISTORY + RESTORE
-    # =================================================
     st.subheader("🕒 Mapping History (Restore)")
 
     if HISTORY:
@@ -179,15 +206,11 @@ if uploaded_file:
         idx = st.selectbox("History ရွေးပါ", range(len(labels)),
                            format_func=lambda i: labels[i])
 
-        if st.button("↩️ Restore This Mapping"):
+        if st.button("↩️ Restore Selected"):
             LEARNED_MAP.clear()
             LEARNED_MAP.update(HISTORY[idx]["snapshot"])
             atomic_save(LEARN_FILE, LEARNED_MAP)
-
-            st.success("♻️ Mapping ကို ဒီနေ့ရက်အခြေအနေအတိုင်း Restore လုပ်ပြီးပါပြီ")
-            st.info("🔄 Refresh / Next upload မှာ auto-apply ဖြစ်ပါမယ်")
-    else:
-        st.info("History မရှိသေးပါ")
+            st.success("♻️ Mapping restored")
 
     st.download_button(
         "⬇️ Download CSV",
@@ -195,4 +218,3 @@ if uploaded_file:
         file_name="telegram_team_parser.csv",
         mime="text/csv"
     )
-
