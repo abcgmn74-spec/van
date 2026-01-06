@@ -12,7 +12,7 @@ from datetime import datetime
 # PAGE CONFIG
 # =================================================
 st.set_page_config(page_title="Telegram TXT Parser", page_icon="📄", layout="wide")
-st.title("📄 Telegram TXT Parser (Username / Team / User Acc)")
+st.title("📄 Telegram TXT Parser (Username / Team / User Acc / Other Comment)")
 
 uploaded_file = st.file_uploader("TXT file တင်ပါ", type=["txt"])
 
@@ -53,48 +53,21 @@ STANDARD_TEAMS = [
 ]
 
 # =================================================
-# MYANMAR TEAM ALIAS (SAFE AUTO)
+# MYANMAR TEAM ALIAS (SAFE)
 # =================================================
 MYANMAR_TEAM_ALIAS = {
-    # Arsenal
-    "အာဆင်နယ်": "Arsenal","အာစင်နယ်": "Arsenal","အာဆင်": "Arsenal",
-
-    # Liverpool
+    "အာဆင်နယ်": "Arsenal","အာစင်နယ်": "Arsenal",
     "လီဗာပူး": "Liverpool","လီဗာပူးလ်": "Liverpool","လီပ": "Liverpool",
-    "လီပူး": "Liverpool","လီပါပူး": "Liverpool","လီပါပူးလ်": "Liverpool",
-
-    # Barcelona
-    "ဘာစီ": "Barcelona","ဘာစီလိုနာ": "Barcelona","ဘာကာ": "Barcelona",
-
-    # Real Madrid
+    "ဘာစီ": "Barcelona","ဘာစီလိုနာ": "Barcelona",
     "ရီးရဲ": "Real Madrid","ရီးရဲလ်": "Real Madrid","မက်ဒရစ်": "Real Madrid",
-
-    # Manchester City
-    "မန်စီးတီး": "Manchester City","မန်စီးတီ": "Manchester City",
-    "စီးတီး": "Manchester City","စီတီ": "Manchester City","စီတီး": "Manchester City",
-
-    # Manchester United
+    "မန်စီးတီး": "Manchester City","စီးတီး": "Manchester City","စီတီ": "Manchester City",
     "မန်ယူ": "Manchester United","မန္ယူ": "Manchester United",
-
-    # Tottenham
-    "စပါး": "Tottenham","စပါ": "Tottenham",
-
-    # Aston Villa
-    "ဗီလာ": "Aston Villa","အက်စတန်ဗီလာ": "Aston Villa",
-
-    # Brighton
+    "စပါး": "Tottenham",
+    "ဗီလာ": "Aston Villa",
     "ဘရိုက်တန်": "Brighton",
-
-    # Newcastle
-    "နယူးကာဆယ်": "Newcastle","နယူး": "Newcastle",
-
-    # Sevilla
+    "နယူးကာဆယ်": "Newcastle",
     "ဆီးဗီလာ": "Sevilla",
-
-    # Everton
     "အဲဗာတန်": "Everton",
-
-    # West Ham
     "ဝက်ဟမ်း": "West Ham"
 }
 
@@ -121,36 +94,55 @@ def clean_team(line):
     return re.sub(r"^[\d\.\-\)\s]+", "", line).strip()
 
 def normalize_raw_token(text: str) -> str:
-    """
-    Remove leading/trailing numbers & symbols
-    Example: '=စီတီ(1)' -> 'စီတီ'
-    """
     if not text:
         return ""
     cleaned = re.sub(r"^[^က-႟A-Za-z]+|[^က-႟A-Za-z]+$", "", text)
     return cleaned.strip()
 
+def is_other_comment(token: str) -> bool:
+    if not token:
+        return True
+
+    t = token.strip()
+
+    if len(t) >= 20:
+        return True
+
+    if " " in t and not any(k in t.lower() for k in ["city", "united"]):
+        return True
+
+    COMMENT_KEYWORDS = [
+        "ကြိုက်","မကြိုက်","ပါ","မပါ","ok","okay","confirm",
+        "အားပေး","ထည့်","မထည့်","ယူ","မယူ","ရ","မရ"
+    ]
+    if any(k in t.lower() for k in COMMENT_KEYWORDS):
+        return True
+
+    if re.fullmatch(r"[A-Za-z]{3,}(?:\s+[A-Za-z]{3,}){1,2}", t):
+        return True
+
+    return False
+
 def normalize_team(raw_team):
     raw = normalize_raw_token(raw_team)
 
     if not raw:
-        return raw_team, True
+        return raw_team, "other"
 
-    # 1️⃣ Admin learned
     if raw in LEARNED_MAP:
-        return LEARNED_MAP[raw], False
+        return LEARNED_MAP[raw], "team"
 
-    # 2️⃣ Myanmar alias
     if raw in MYANMAR_TEAM_ALIAS:
-        return MYANMAR_TEAM_ALIAS[raw], False
+        return MYANMAR_TEAM_ALIAS[raw], "team"
 
-    # 3️⃣ English fuzzy
     match = get_close_matches(raw, STANDARD_TEAMS, n=1, cutoff=0.85)
     if match:
-        return match[0], False
+        return match[0], "team"
 
-    # 4️⃣ Unknown
-    return raw, True
+    if is_other_comment(raw):
+        return raw, "other"
+
+    return raw, "unknown"
 
 # =================================================
 # MAIN
@@ -176,7 +168,7 @@ if uploaded_file:
         if not username:
             continue
 
-        teams_raw, teams_std, user_acc = [], [], []
+        teams_raw, teams_std, user_acc, other_comments = [], [], [], []
 
         for line in lines[1:]:
             if is_user_acc(line):
@@ -185,16 +177,22 @@ if uploaded_file:
                 raw = clean_team(line)
                 if not raw:
                     continue
-                std, unk = normalize_team(raw)
-                teams_raw.append(raw)
-                teams_std.append(std)
-                if unk:
+
+                std, kind = normalize_team(raw)
+
+                if kind == "team":
+                    teams_raw.append(raw)
+                    teams_std.append(std)
+                elif kind == "other":
+                    other_comments.append(raw)
+                else:
                     unknown_list.append(raw)
 
         records.append({
             "Username": username,
             "Teams (RAW)": ", ".join(dict.fromkeys(teams_raw)),
             "Teams (STANDARD)": ", ".join(dict.fromkeys(teams_std)),
+            "Other Comment": ", ".join(dict.fromkeys(other_comments)),
             "User Acc": ", ".join(user_acc)
         })
 
@@ -203,7 +201,7 @@ if uploaded_file:
     st.dataframe(df, use_container_width=True)
 
     # =================================================
-    # ADMIN ROLL + HISTORY
+    # ADMIN ROLL – UNKNOWN TEAMS
     # =================================================
     st.subheader("🔴 Admin Roll – Unknown Teams")
 
@@ -233,6 +231,9 @@ if uploaded_file:
 
             st.success("✅ Mapping saved permanently")
 
+    # =================================================
+    # HISTORY RESTORE
+    # =================================================
     st.subheader("🕒 Mapping History (Restore)")
 
     if HISTORY:
