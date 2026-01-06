@@ -6,9 +6,9 @@ import os
 from difflib import get_close_matches
 from collections import Counter
 
-# -------------------------------------------------
+# =================================================
 # PAGE CONFIG (FULL WIDTH)
-# -------------------------------------------------
+# =================================================
 st.set_page_config(
     page_title="Telegram TXT Parser",
     page_icon="📄",
@@ -19,9 +19,9 @@ st.title("📄 Telegram TXT Parser (Username / Team / User Acc)")
 
 uploaded_file = st.file_uploader("TXT file တင်ပါ", type=["txt"])
 
-# -------------------------------------------------
-# Persistent learning storage
-# -------------------------------------------------
+# =================================================
+# LEARNING STORAGE
+# =================================================
 LEARN_FILE = "team_learning.json"
 if os.path.exists(LEARN_FILE):
     with open(LEARN_FILE, "r", encoding="utf-8") as f:
@@ -29,9 +29,9 @@ if os.path.exists(LEARN_FILE):
 else:
     LEARNED_MAP = {}
 
-# -------------------------------------------------
-# Standard teams
-# -------------------------------------------------
+# =================================================
+# STANDARD TEAMS
+# =================================================
 STANDARD_TEAMS = [
     "Real Madrid","Barcelona","Manchester United","Manchester City",
     "Liverpool","Arsenal","Chelsea","Tottenham","Newcastle",
@@ -40,18 +40,18 @@ STANDARD_TEAMS = [
     "Fulham","Forest","Burnley","Bournemouth"
 ]
 
-# -------------------------------------------------
-# Regex patterns
-# -------------------------------------------------
+# =================================================
+# REGEX
+# =================================================
 USER_HEADER = re.compile(
     r"^(.+?),\s*\[\d{1,2}/\d{1,2}/\d{4}\s+\d{1,2}:\d{2}\s+(AM|PM)\]$"
 )
 PHONE_PATTERN = re.compile(r"(?:\+?959|09)\d{7,12}")
 USER_ACC_KEYWORDS = re.compile(r"(ok\s*bet|okbet|slot|shank|bet)", re.I)
 
-# -------------------------------------------------
-# Helpers
-# -------------------------------------------------
+# =================================================
+# HELPERS
+# =================================================
 def extract_username(line):
     m = USER_HEADER.match(line)
     return m.group(1).strip() if m else None
@@ -63,21 +63,21 @@ def clean_team(line):
     return re.sub(r"^[\d\.\-\)\s]+", "", line).strip()
 
 def normalize_team(raw_team):
-    # 1️⃣ admin learned mapping
+    # 1️⃣ Admin learned (100% safe)
     if raw_team in LEARNED_MAP:
         return LEARNED_MAP[raw_team], False
 
-    # 2️⃣ fuzzy matching
-    match = get_close_matches(raw_team, STANDARD_TEAMS, n=1, cutoff=0.82)
+    # 2️⃣ Auto fuzzy (high confidence only)
+    match = get_close_matches(raw_team, STANDARD_TEAMS, n=1, cutoff=0.85)
     if match:
         return match[0], False
 
-    # 3️⃣ unknown
+    # 3️⃣ Unknown
     return raw_team, True
 
-# -------------------------------------------------
+# =================================================
 # MAIN
-# -------------------------------------------------
+# =================================================
 if uploaded_file:
     text = uploaded_file.read().decode("utf-8")
 
@@ -129,25 +129,42 @@ if uploaded_file:
 
     st.success(f"✅ Parsed users: {len(df)}")
 
-    # ---------------- MAIN TABLE ----------------
+    # ================= MAIN TABLE =================
     st.dataframe(df, use_container_width=True)
 
-    # -------------------------------------------------
-    # ADMIN ROLL – EXCEL STYLE MULTI SELECT
-    # -------------------------------------------------
-    st.subheader("🔴 Admin Roll – Unknown Teams (Excel-style Batch Edit)")
+    # =================================================
+    # ADMIN ROLL – EXCEL LEVEL (SEARCH + SORT)
+    # =================================================
+    st.subheader("🔴 Admin Roll – Unknown Teams (Search + Frequency Sort)")
 
     if unknown_list:
         counter = Counter(unknown_list)
 
-        # format: "Aston villa (12)"
-        options = [
-            f"{name} ({count})"
-            for name, count in sorted(counter.items(), key=lambda x: -x[1])
-        ]
+        # 🔍 SEARCH BOX
+        search_text = st.text_input(
+            "🔍 Search unknown team (Excel filter လို)",
+            placeholder="Type team name..."
+        )
+
+        # 📊 SORT BY FREQUENCY (DESC)
+        sorted_items = sorted(
+            counter.items(),
+            key=lambda x: x[1],
+            reverse=True
+        )
+
+        # APPLY SEARCH FILTER
+        if search_text:
+            sorted_items = [
+                (name, cnt)
+                for name, cnt in sorted_items
+                if search_text.lower() in name.lower()
+            ]
+
+        options = [f"{name} ({cnt})" for name, cnt in sorted_items]
 
         selected_items = st.multiselect(
-            "Unknown Teams (RAW) – checkbox နဲ့ အများကြီးရွေးပါ",
+            "Unknown Teams (RAW) – Checkbox နဲ့ အများကြီးရွေးပါ",
             options
         )
 
@@ -175,7 +192,7 @@ if uploaded_file:
     else:
         st.success("Unknown team မရှိပါ 🎉")
 
-    # ---------------- EXPORT ----------------
+    # ================= EXPORT =================
     st.download_button(
         "⬇️ Download CSV",
         df.to_csv(index=False),
