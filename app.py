@@ -56,22 +56,162 @@ STANDARD_TEAMS = [
 # MYANMAR AUTO ALIAS (SAFE)
 # =================================================
 MYANMAR_TEAM_ALIAS = {
+    # =====================
+    # Arsenal
+    # =====================
     "အာဆင်နယ်": "Arsenal",
     "အာစင်နယ်": "Arsenal",
+    "အာဇငိနယ်": "Arsenal",
+    "အာဆင်": "Arsenal",
+
+    # =====================
+    # Liverpool
+    # =====================
     "လီဗာပူး": "Liverpool",
     "လီဗာပူးလ်": "Liverpool",
+    "လီပါပူး": "Liverpool",
+    "လီပါဘူး": "Liverpool",
+    "လီပါပူးလ်": "Liverpool",
+    "လီဗာပူလ်း": "Liverpool",
+    "လီဗာဗူး": "Liverpool",
+    "လေဗာပူး": "Liverpool",
+
+    # =====================
+    # Barcelona
+    # =====================
     "ဘာစီ": "Barcelona",
     "ဘာစီလိုနာ": "Barcelona",
+    "ဘာစိလိုနာ": "Barcelona",
+    "ဘာစီး": "Barcelona",
+    "ဘာကာ": "Barcelona",
+
+    # =====================
+    # Real Madrid
+    # =====================
     "ရီးရဲ": "Real Madrid",
-    "ရီးရဲမဒရစ်": "Real Madrid",
+    "ရီးရဲလ်": "Real Madrid",
+    "ရီးရဲမက်ဒရစ်": "Real Madrid",
+    "ရီးရဲလ်မက်ဒရစ်": "Real Madrid",
+    "ရီရဲ": "Real Madrid",
+    "ရီရဲလ်": "Real Madrid",
+    "ရီရဲမက်ဒရစ်": "Real Madrid",
+    "မက်ဒရစ်": "Real Madrid",
+
+    # =====================
+    # Manchester City
+    # =====================
     "မန်စီးတီး": "Manchester City",
+    "မန်စီးတီ": "Manchester City",
+    "မန်စီတီး": "Manchester City",
+    "မန်းစီးတီး": "Manchester City",
+    "စီးတီး": "Manchester City",
+
+    # =====================
+    # Manchester United
+    # =====================
     "မန်ယူ": "Manchester United",
+    "မန္ယူ": "Manchester United",
+
+    # =====================
+    # Tottenham Hotspur
+    # =====================
     "စပါး": "Tottenham",
-    "အက်စတန်ဗီလာ": "Aston Villa",
+    "စပါ": "Tottenham",
+
+    # =====================
+    # Aston Villa
+    # =====================
     "ဗီလာ": "Aston Villa",
+    "အေဗီလာ": "Aston Villa",
+    "အဲဗီလာ": "Aston Villa",
+    "အက်စတွန်ဗီလာ": "Aston Villa",
+    "အက်တွန်ဗီလာ": "Aston Villa",
+    "အက်စတိုးဗီလာ": "Aston Villa",
+    "Aဗီလာ": "Aston Villa",
+    "Astonဗီလာ": "Aston Villa",
+
+    # =====================
+    # Brighton
+    # =====================
     "ဘရိုက်တန်": "Brighton",
-    "နယူးကာဆယ်": "Newcastle"
+    "ဘရိုတ်တန်": "Brighton",
+    "ဘရုိက်တန်": "Brighton",
+
+    # =====================
+    # Newcastle
+    # =====================
+    "နယူးကာဆယ်": "Newcastle",
+    "နယူကာဆယ်": "Newcastle",
+    "နယူး": "Newcastle",
+    "နယူးကားဆယ်": "Newcastle",
+    "နကူးကာဆယ်": "Newcastle",
+
+    # =====================
+    # Sevilla
+    # =====================
+    "ဆီးဗီလာ": "Sevilla",
+    "ဆီဗီလာ": "Sevilla",
+    "ဆီးဗီးလား": "Sevilla",
+    "ဆီဗီးလား": "Sevilla",
+    "ဆီဗီလား": "Sevilla",
+
+    # =====================
+    # Villarreal
+    # =====================
+    "ဗီလာရီရဲလ်": "Villarreal",
+    "ဗီလာရီးရဲလ်": "Villarreal",
+    "ဗီလာရီးရဲ": "Villarreal",
+    "ဗယ်လာရီးရဲလ်": "Villarreal",
+
+    # =====================
+    # Everton
+    # =====================
+    "အဲဗာတန်": "Everton",
+    "အယ်ဘာတန်": "Everton",
+
+    # =====================
+    # West Ham
+    # =====================
+    "ဝက်ဟမ်း": "West Ham",
+    "ဝက်စ်ဟမ်း": "West Ham",
+
+    # =====================
+    # Wolves
+    # =====================
+    "ဝုဗ်": "Wolves",
+
+    # =====================
+    # Leeds
+    # =====================
+    "လိဒ်": "Leeds",
+    "လိဒ့်": "Leeds",
+
+    # =====================
+    # Brentford
+    # =====================
+    "ဘရက်ဖို့": "Brentford",
+
+    # =====================
+    # Chelsea
+    # =====================
+    "ချဲလ်ဆီး": "Chelsea",
+
+    # =====================
+    # Athletic Club
+    # =====================
+    "ဘီဘာအို": "Athletic Club",
+
+    # =====================
+    # Forest
+    # =====================
+    "ဖော့ရက်စ်": "Forest",
+
+    # =====================
+    # Bournemouth
+    # =====================
+    "ဘုန်းမောက်": "Bournemouth"
 }
+
 
 # =================================================
 # REGEX
@@ -218,3 +358,4 @@ if uploaded_file:
         file_name="telegram_team_parser.csv",
         mime="text/csv"
     )
+
