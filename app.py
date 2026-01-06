@@ -53,91 +53,23 @@ STANDARD_TEAMS = [
 ]
 
 # =================================================
-# MYANMAR / REAL-WORLD ALIAS (FROM YOUR DATA)
+# MYANMAR / REAL-WORLD ALIAS
 # =================================================
 MYANMAR_TEAM_ALIAS = {
-    # Manchester City
-    "man city": "Manchester City",
-    "man city.": "Manchester City",
-    "man city ": "Manchester City",
-    "man city,": "Manchester City",
-    "မန်စီးတီး": "Manchester City",
-    "စီးတီး": "Manchester City",
-    "စီတီ": "Manchester City",
-
-    # Manchester United
-    "man united": "Manchester United",
-    "man u": "Manchester United",
-    "man unnited": "Manchester United",
-    "မန်ယူ": "Manchester United",
-
-    # Real Madrid
-    "ရီးရဲ": "Real Madrid",
-    "ရီးရယ်": "Real Madrid",
-    "ရီးရဲလ်": "Real Madrid",
-    "ရီးရဲမက်ဒရစ်": "Real Madrid",
-    "ရီးရဲလ်မက်ဒရစ်": "Real Madrid",
-    "ရီရဲ": "Real Madrid",
-    "ရီရဲလ်": "Real Madrid",
-    "ရီရဲမက်ဒရစ်": "Real Madrid",
-
-    # Liverpool
-    "လီပါပူး": "Liverpool",
-    "လီပါပူးး": "Liverpool",
-    "လီပါဘူး": "Liverpool",
-    "လီပါပူလ်း": "Liverpool",
-
-    # Villarreal
-    "ဗီလာရီရဲ": "Villarreal",
-    "ဗီလာရီးရဲ": "Villarreal",
-    "ဗီလာရီးရဲလ်": "Villarreal",
-    "ဗီလာရီရဲလ်": "Villarreal",
-    "ဗယ်လာရီးရဲလ်": "Villarreal",
-
-    # Newcastle
-    "နယူး": "Newcastle",
-    "နယူးကာဆယ်": "Newcastle",
-    "နယူကာဆယ်": "Newcastle",
-    "နယူးကားဆယ်": "Newcastle",
-
-    # Brighton
-    "ဘရိုတ်တန်": "Brighton",
+    "man city": "Manchester City","man city.": "Manchester City",
+    "man united": "Manchester United","man u": "Manchester United",
+    "မန်စီးတီး": "Manchester City","စီတီ": "Manchester City",
+    "ရီးရဲ": "Real Madrid","ရီးရဲလ်": "Real Madrid",
+    "ရီးရဲမက်ဒရစ်": "Real Madrid","ရီရဲ": "Real Madrid",
+    "လီပါပူး": "Liverpool","လီပါပူးး": "Liverpool",
+    "ဗီလာရီရဲ": "Villarreal","ဗီလာရီးရဲလ်": "Villarreal",
+    "နယူး": "Newcastle","နယူကာဆယ်": "Newcastle",
     "ဘရိုက်တန်": "Brighton",
-    "ဘရုိက်တန်": "Brighton",
-
-    # Aston Villa
     "aston villa": "Aston Villa",
-    "aston viIIa": "Aston Villa",
-    "ဗီလာ": "Aston Villa",
-
-    # West Ham
     "west ham": "West Ham",
-    "ဝက်စ်ဟမ်း": "West Ham",
-
-    # Forest
-    "ဖော့ရက်စ်": "Forest",
-
-    # Brentford
-    "ဘရက်ဖို့": "Brentford",
-    "ဘရက်ဗိုလ်": "Brentford",
-
-    # Sevilla
-    "ဆီဗီလာ": "Sevilla",
-
-    # Fulham
-    "ဖူဟမ်": "Fulham",
-
-    # Wolves
     "wolves": "Wolves",
-
-    # Athletic Club
     "athletic club": "Athletic Club",
-
-    # Tottenham
     "tottenham hotspur": "Tottenham",
-    "စပါး": "Tottenham",
-
-    # Celta Vigo
     "celta vigo": "Celta Vigo"
 }
 
@@ -165,8 +97,6 @@ def is_other_comment(token: str) -> bool:
     if len(token) >= 20:
         return True
     if " " in token and token not in MYANMAR_TEAM_ALIAS:
-        return True
-    if re.fullmatch(r"[A-Za-z]{3,}(?:\s+[A-Za-z]{3,}){1,2}", token):
         return True
     return False
 
@@ -198,81 +128,55 @@ if uploaded_file:
     text = uploaded_file.read().decode("utf-8")
     lines = [l.strip() for l in text.split("\n") if l.strip()]
 
-    teams_std, other_comments, unknown_list, user_acc = [], [], [], []
+    teams, others, unknowns, accounts = [], [], [], []
 
     for line in lines:
         if is_user_acc(line):
-            user_acc.append(line)
+            accounts.append(line)
             continue
 
         std, kind = normalize_team(line)
 
         if kind == "team":
-            teams_std.append(std)
+            teams.append(std)
         elif kind == "other":
-            other_comments.append(line)
+            others.append(line)
         else:
-            unknown_list.append(line)
-
-    df = pd.DataFrame({
-        "Teams (STANDARD)": list(dict.fromkeys(teams_std)),
-        "Other Comment": list(dict.fromkeys(other_comments)),
-        "Unknown": list(dict.fromkeys(unknown_list)),
-        "User Acc": list(dict.fromkeys(user_acc))
-    })
+            unknowns.append(line)
 
     st.success("✅ Parsing completed")
-    st.dataframe(df, use_container_width=True)
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.subheader("🏟 Teams (STANDARD)")
+        st.dataframe(pd.DataFrame({"Team": list(dict.fromkeys(teams))}))
+
+        st.subheader("❓ Unknown")
+        st.dataframe(pd.DataFrame({"Unknown": list(dict.fromkeys(unknowns))}))
+
+    with col2:
+        st.subheader("💬 Other Comment")
+        st.dataframe(pd.DataFrame({"Comment": list(dict.fromkeys(others))}))
+
+        st.subheader("👤 User Acc")
+        st.dataframe(pd.DataFrame({"Account": list(dict.fromkeys(accounts))}))
 
     # =================================================
-    # ADMIN ROLL – UNKNOWN
+    # ADMIN ROLL
     # =================================================
-    if unknown_list:
+    if unknowns:
         st.subheader("🔴 Admin Roll – Unknown Teams")
-        counter = Counter(unknown_list)
+        counter = Counter(unknowns)
         options = [f"{k} ({v})" for k,v in counter.items()]
 
         selected = st.multiselect("Unknown", options)
         correct_team = st.selectbox("Correct Standard Team", STANDARD_TEAMS)
 
         if st.button("💾 Apply & Save"):
-            raw_items = []
             for item in selected:
                 raw = normalize_raw_token(item.rsplit("(",1)[0])
                 LEARNED_MAP[raw] = correct_team
-                raw_items.append(raw)
 
             atomic_save(LEARN_FILE, LEARNED_MAP)
-
-            HISTORY.append({
-                "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "raw_items": raw_items,
-                "mapped_to": correct_team,
-                "snapshot": LEARNED_MAP.copy()
-            })
-            atomic_save(HISTORY_FILE, HISTORY)
             st.success("✅ Mapping saved permanently")
-
-    # =================================================
-    # HISTORY RESTORE
-    # =================================================
-    if HISTORY:
-        st.subheader("🕒 Mapping History")
-        labels = [
-            f"{h['time']} | {len(h['raw_items'])} → {h['mapped_to']}"
-            for h in HISTORY
-        ]
-        idx = st.selectbox("Restore point", range(len(labels)),
-                           format_func=lambda i: labels[i])
-        if st.button("↩️ Restore"):
-            LEARNED_MAP.clear()
-            LEARNED_MAP.update(HISTORY[idx]["snapshot"])
-            atomic_save(LEARN_FILE, LEARNED_MAP)
-            st.success("♻️ Mapping restored")
-
-    st.download_button(
-        "⬇️ Download CSV",
-        df.to_csv(index=False),
-        file_name="parsed_result.csv",
-        mime="text/csv"
-    )
