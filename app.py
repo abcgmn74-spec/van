@@ -6,6 +6,7 @@ import os
 import tempfile
 from difflib import get_close_matches
 from collections import Counter
+from datetime import datetime
 
 # =================================================
 # PAGE CONFIG
@@ -16,25 +17,29 @@ st.title("📄 Telegram TXT Parser (Username / Team / User Acc)")
 uploaded_file = st.file_uploader("TXT file တင်ပါ", type=["txt"])
 
 # =================================================
-# PERSISTENT LEARNING STORAGE (ALWAYS LOAD)
+# FILE PATHS
 # =================================================
 LEARN_FILE = "team_learning.json"
+HISTORY_FILE = "team_learning_history.json"
 
-def load_mapping():
-    if os.path.exists(LEARN_FILE):
-        with open(LEARN_FILE, "r", encoding="utf-8") as f:
+# =================================================
+# LOAD / SAVE HELPERS
+# =================================================
+def load_json(path, default):
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
-    return {}
+    return default
 
-def atomic_save_mapping(data: dict):
-    # crash-safe save
-    d = os.path.dirname(LEARN_FILE) or "."
+def atomic_save(path, data):
+    d = os.path.dirname(path) or "."
     with tempfile.NamedTemporaryFile("w", delete=False, dir=d, encoding="utf-8") as tf:
         json.dump(data, tf, ensure_ascii=False, indent=2)
-        temp_name = tf.name
-    os.replace(temp_name, LEARN_FILE)
+        temp = tf.name
+    os.replace(temp, path)
 
-LEARNED_MAP = load_mapping()   # 🔒 always load on start
+LEARNED_MAP = load_json(LEARN_FILE, {})
+HISTORY = load_json(HISTORY_FILE, [])
 
 # =================================================
 # STANDARD TEAMS
@@ -70,16 +75,13 @@ def clean_team(line):
     return re.sub(r"^[\d\.\-\)\s]+", "", line).strip()
 
 def normalize_team(raw_team):
-    # 1️⃣ admin learned (always preferred)
     if raw_team in LEARNED_MAP:
         return LEARNED_MAP[raw_team], False
 
-    # 2️⃣ auto fuzzy (high confidence only)
     match = get_close_matches(raw_team, STANDARD_TEAMS, n=1, cutoff=0.85)
     if match:
         return match[0], False
 
-    # 3️⃣ unknown
     return raw_team, True
 
 # =================================================
@@ -112,14 +114,14 @@ if uploaded_file:
             if is_user_acc(line):
                 user_acc.append(line)
             else:
-                team_raw = clean_team(line)
-                if not team_raw:
+                raw = clean_team(line)
+                if not raw:
                     continue
-                std, is_unknown = normalize_team(team_raw)
-                teams_raw.append(team_raw)
+                std, unk = normalize_team(raw)
+                teams_raw.append(raw)
                 teams_std.append(std)
-                if is_unknown:
-                    unknown_list.append(team_raw)
+                if unk:
+                    unknown_list.append(raw)
 
         records.append({
             "Username": username,
@@ -133,50 +135,59 @@ if uploaded_file:
     st.dataframe(df, use_container_width=True)
 
     # =================================================
-    # ADMIN ROLL – PERSISTENT (STATEFUL MULTI-SELECT)
+    # ADMIN ROLL – APPLY MAPPING (WITH HISTORY)
     # =================================================
-    st.subheader("🔴 Admin Roll – Unknown Teams (Persistent Mapping)")
+    st.subheader("🔴 Admin Roll – Apply Mapping")
 
     if unknown_list:
         counter = Counter(unknown_list)
+        options = [f"{k} ({v})" for k,v in counter.items()]
 
-        search_text = st.text_input("🔍 Search unknown team", key="unknown_search")
-        sorted_items = sorted(counter.items(), key=lambda x: x[1], reverse=True)
-
-        if search_text:
-            sorted_items = [(n,c) for n,c in sorted_items if search_text.lower() in n.lower()]
-
-        options = [f"{name} ({cnt})" for name, cnt in sorted_items]
-
-        if "selected_unknowns" not in st.session_state:
-            st.session_state.selected_unknowns = []
-
-        selected_items = st.multiselect(
-            "Unknown Teams (RAW)",
-            options,
-            default=[x for x in st.session_state.selected_unknowns if x in options],
-            key="unknown_multiselect"
-        )
-        st.session_state.selected_unknowns = selected_items
-
+        selected = st.multiselect("Unknown Teams", options)
         correct_team = st.selectbox("Correct Standard Team", STANDARD_TEAMS)
 
-        if st.button("💾 Apply & Save Permanently"):
-            if not st.session_state.selected_unknowns:
-                st.warning("အနည်းဆုံး ၁ ခုရွေးပါ")
-            else:
-                for item in st.session_state.selected_unknowns:
-                    raw_name = item.rsplit("(", 1)[0].strip()
-                    LEARNED_MAP[raw_name] = correct_team
+        if st.button("💾 Apply & Save"):
+            raw_items = []
+            for item in selected:
+                raw = item.rsplit("(",1)[0].strip()
+                LEARNED_MAP[raw] = correct_team
+                raw_items.append(raw)
 
-                atomic_save_mapping(LEARNED_MAP)   # 🔒 ALWAYS SAVE
-                st.session_state.selected_unknowns = []
+            atomic_save(LEARN_FILE, LEARNED_MAP)
 
-                st.success("✅ Mapping ကို အမြဲတမ်း သိမ်းပြီးပါပြီ")
-                st.info("🔄 Refresh / Next upload မှာ auto-apply ဖြစ်ပါမယ်")
+            HISTORY.append({
+                "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "raw_items": raw_items,
+                "mapped_to": correct_team,
+                "snapshot": LEARNED_MAP.copy()
+            })
+            atomic_save(HISTORY_FILE, HISTORY)
 
+            st.success("✅ Mapping saved with history")
+
+    # =================================================
+    # ADMIN HISTORY + RESTORE
+    # =================================================
+    st.subheader("🕒 Mapping History (Restore)")
+
+    if HISTORY:
+        labels = [
+            f"{h['time']} | {len(h['raw_items'])} items → {h['mapped_to']}"
+            for h in HISTORY
+        ]
+
+        idx = st.selectbox("History ရွေးပါ", range(len(labels)),
+                           format_func=lambda i: labels[i])
+
+        if st.button("↩️ Restore This Mapping"):
+            LEARNED_MAP.clear()
+            LEARNED_MAP.update(HISTORY[idx]["snapshot"])
+            atomic_save(LEARN_FILE, LEARNED_MAP)
+
+            st.success("♻️ Mapping ကို ဒီနေ့ရက်အခြေအနေအတိုင်း Restore လုပ်ပြီးပါပြီ")
+            st.info("🔄 Refresh / Next upload မှာ auto-apply ဖြစ်ပါမယ်")
     else:
-        st.success("Unknown team မရှိပါ 🎉")
+        st.info("History မရှိသေးပါ")
 
     st.download_button(
         "⬇️ Download CSV",
@@ -184,3 +195,4 @@ if uploaded_file:
         file_name="telegram_team_parser.csv",
         mime="text/csv"
     )
+
