@@ -6,50 +6,37 @@ import os
 import tempfile
 from difflib import get_close_matches
 from collections import Counter
-from datetime import datetime
-
-# ================= HF (LOW-RAM SAFE) =================
-from transformers import pipeline
-
-@st.cache_resource
-def load_hf_classifier():
-    return pipeline(
-        "zero-shot-classification",
-        model="typeform/distilbert-base-uncased-mnli"  # LOW RAM
-    )
-
-hf_classifier = load_hf_classifier()
 
 # =================================================
 # PAGE CONFIG
 # =================================================
 st.set_page_config(page_title="Telegram TXT Parser", page_icon="📄", layout="wide")
-st.title("📄 Telegram TXT Parser (Rule-based + HF AI Suggest)")
+st.title("📄 Telegram TXT Parser (Stable – Rule-based)")
 
 uploaded_file = st.file_uploader("TXT file တင်ပါ", type=["txt"])
 
 # =================================================
-# FILE PATHS
+# FILE PATH
 # =================================================
 LEARN_FILE = "team_learning.json"
 
 # =================================================
 # LOAD / SAVE
 # =================================================
-def load_json(path, default):
-    if os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as f:
+def load_mapping():
+    if os.path.exists(LEARN_FILE):
+        with open(LEARN_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
-    return default
+    return {}
 
-def atomic_save(path, data):
-    d = os.path.dirname(path) or "."
+def atomic_save_mapping(data: dict):
+    d = os.path.dirname(LEARN_FILE) or "."
     with tempfile.NamedTemporaryFile("w", delete=False, dir=d, encoding="utf-8") as tf:
         json.dump(data, tf, ensure_ascii=False, indent=2)
         temp = tf.name
-    os.replace(temp, path)
+    os.replace(temp, LEARN_FILE)
 
-LEARNED_MAP = load_json(LEARN_FILE, {})
+LEARNED_MAP = load_mapping()
 
 # =================================================
 # STANDARD TEAMS
@@ -63,7 +50,7 @@ STANDARD_TEAMS = [
 ]
 
 # =================================================
-# MYANMAR / COMMON ALIAS (SAFE)
+# MYANMAR / COMMON ALIAS
 # =================================================
 MYANMAR_TEAM_ALIAS = {
     "man city": "Manchester City",
@@ -108,37 +95,34 @@ def normalize_raw_token(text: str) -> str:
     cleaned = re.sub(r"^[^က-႟A-Za-z]+|[^က-႟A-Za-z]+$", "", text)
     return cleaned.strip().lower()
 
-# -------- HF AI (CLASSIFY ONLY)
-def hf_classify(text: str) -> str:
-    labels = ["football team", "person name", "comment"]
-    result = hf_classifier(text, labels)
-    return result["labels"][0]
+def is_other_comment(text: str) -> bool:
+    if not text:
+        return True
+    if len(text) > 20:
+        return True
+    if " " in text and text.lower() not in MYANMAR_TEAM_ALIAS:
+        return True
+    if re.fullmatch(r"[A-Za-z]{3,}(?:\s+[A-Za-z]{3,}){1,2}", text):
+        return True
+    return False
 
-# -------- MAIN NORMALIZER
-def normalize_team(raw_team):
-    raw = normalize_raw_token(raw_team)
+def normalize_team(raw_text):
+    raw = normalize_raw_token(raw_text)
 
-    # 1️⃣ Admin learned
     if raw in LEARNED_MAP:
-        return LEARNED_MAP[raw], "team", "admin"
+        return LEARNED_MAP[raw], "team"
 
-    # 2️⃣ Alias
     if raw in MYANMAR_TEAM_ALIAS:
-        return MYANMAR_TEAM_ALIAS[raw], "team", "alias"
+        return MYANMAR_TEAM_ALIAS[raw], "team"
 
-    # 3️⃣ English fuzzy
     match = get_close_matches(raw.title(), STANDARD_TEAMS, n=1, cutoff=0.85)
     if match:
-        return match[0], "team", "fuzzy"
+        return match[0], "team"
 
-    # 4️⃣ HF AI classify (SAFE)
-    ai_type = hf_classify(raw_team)
+    if is_other_comment(raw_text):
+        return raw_text, "other"
 
-    if ai_type != "football team":
-        return raw_team, "other", "ai"
-
-    # football team but unknown spelling
-    return raw_team, "unknown", "ai-suggest"
+    return raw_text, "unknown"
 
 # =================================================
 # MAIN
@@ -164,29 +148,27 @@ if uploaded_file:
         if not username:
             continue
 
-        teams, others, accounts, ai_notes = [], [], [], []
+        teams, others, accounts = [], [], []
 
         for line in lines[1:]:
             if is_user_acc(line):
                 accounts.append(line)
                 continue
 
-            std, kind, src = normalize_team(line)
+            value, kind = normalize_team(line)
 
             if kind == "team":
-                teams.append(std)
+                teams.append(value)
             elif kind == "other":
                 others.append(line)
             else:
                 unknown_list.append(line)
-                ai_notes.append(f"{line} → {src}")
 
         records.append({
             "Username": username,
             "Teams (STANDARD)": ", ".join(dict.fromkeys(teams)),
             "Other Comment": ", ".join(dict.fromkeys(others)),
-            "User Acc": ", ".join(dict.fromkeys(accounts)),
-            "AI Note": ", ".join(dict.fromkeys(ai_notes))
+            "User Acc": ", ".join(dict.fromkeys(accounts))
         })
 
     df = pd.DataFrame(records)
@@ -197,7 +179,7 @@ if uploaded_file:
     # ADMIN ROLL – UNKNOWN
     # =================================================
     if unknown_list:
-        st.subheader("🔴 Admin Roll – Unknown Teams (HF AI assisted)")
+        st.subheader("🔴 Admin Roll – Unknown Teams")
         counter = Counter(unknown_list)
         options = [f"{k} ({v})" for k,v in counter.items()]
 
@@ -209,5 +191,5 @@ if uploaded_file:
                 raw = normalize_raw_token(item.rsplit("(",1)[0])
                 LEARNED_MAP[raw] = correct_team
 
-            atomic_save(LEARN_FILE, LEARNED_MAP)
+            atomic_save_mapping(LEARNED_MAP)
             st.success("✅ Mapping saved permanently")
