@@ -137,34 +137,52 @@ if uploaded_file:
     # -------------------------------------------------
     # ADMIN ROLL
     # -------------------------------------------------
-    st.subheader("🔴 Admin Roll – Unknown Teams")
+   # ---------------- ADMIN ROLL (EXCEL-LIKE MULTI SELECT) ----------------
+st.subheader("🔴 Admin Roll – Unknown Teams (Batch Edit)")
 
-    if unknown_pool:
-        col1, col2, col3 = st.columns([2, 2, 1])
+if unknown_pool:
+    # count unknown frequency
+    from collections import Counter
+    unknown_list = []
+    for t in unknown_pool:
+        unknown_list.append(t)
 
-        with col1:
-            unknown_team = st.selectbox(
-                "Unknown Team (RAW)",
-                sorted(unknown_pool)
+    unknown_counter = Counter(unknown_list)
+
+    # show multiselect with count
+    options = [
+        f"{name}  ({count})"
+        for name, count in unknown_counter.items()
+    ]
+
+    selected = st.multiselect(
+        "Unknown Teams (RAW) – Excel လို checkbox နဲ့ရွေးပါ",
+        options
+    )
+
+    correct_team = st.selectbox(
+        "Correct Standard Team",
+        STANDARD_TEAMS
+    )
+
+    if st.button("💾 Apply to Selected"):
+        if not selected:
+            st.warning("အနည်းဆုံး ၁ ခုရွေးပါ")
+        else:
+            for item in selected:
+                raw_name = item.rsplit("(", 1)[0].strip()
+                LEARNED_MAP[raw_name] = correct_team
+
+            with open(LEARN_FILE, "w", encoding="utf-8") as f:
+                json.dump(LEARNED_MAP, f, ensure_ascii=False, indent=2)
+
+            st.success(
+                f"✅ {len(selected)} team(s) ကို '{correct_team}' အဖြစ် ပြင်ပြီးပါပြီ"
             )
+            st.info("🔄 App ကို rerun / refresh လုပ်ပါ")
 
-        with col2:
-            correct_team = st.selectbox(
-                "Correct Standard Team",
-                STANDARD_TEAMS
-            )
-
-        with col3:
-            if st.button("💾 Save"):
-                LEARNED_MAP[unknown_team] = correct_team
-                with open(LEARN_FILE, "w", encoding="utf-8") as f:
-                    json.dump(LEARNED_MAP, f, ensure_ascii=False, indent=2)
-
-                st.success(f"Learned: {unknown_team} → {correct_team}")
-                st.info("🔄 App ကို refresh / rerun လုပ်ပါ")
-
-    else:
-        st.success("Unknown team မရှိပါ 🎉")
+else:
+    st.success("Unknown team မရှိပါ 🎉")
 
     # -------------------------------------------------
     # EXPORT
@@ -175,3 +193,4 @@ if uploaded_file:
         file_name="telegram_team_parser.csv",
         mime="text/csv"
     )
+
