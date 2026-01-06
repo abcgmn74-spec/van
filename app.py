@@ -4,6 +4,7 @@ import re
 import json
 import os
 from difflib import get_close_matches
+from collections import Counter
 
 # -------------------------------------------------
 # PAGE CONFIG (FULL WIDTH)
@@ -11,7 +12,7 @@ from difflib import get_close_matches
 st.set_page_config(
     page_title="Telegram TXT Parser",
     page_icon="📄",
-    layout="wide"   # ✅ FULL WIDTH
+    layout="wide"
 )
 
 st.title("📄 Telegram TXT Parser (Username / Team / User Acc)")
@@ -45,7 +46,6 @@ STANDARD_TEAMS = [
 USER_HEADER = re.compile(
     r"^(.+?),\s*\[\d{1,2}/\d{1,2}/\d{4}\s+\d{1,2}:\d{2}\s+(AM|PM)\]$"
 )
-
 PHONE_PATTERN = re.compile(r"(?:\+?959|09)\d{7,12}")
 USER_ACC_KEYWORDS = re.compile(r"(ok\s*bet|okbet|slot|shank|bet)", re.I)
 
@@ -88,7 +88,7 @@ if uploaded_file:
     )
 
     records = []
-    unknown_pool = set()
+    unknown_list = []
 
     for block in blocks:
         lines = [l.strip() for l in block.split("\n") if l.strip()]
@@ -116,7 +116,7 @@ if uploaded_file:
                 teams_std.append(std)
 
                 if is_unknown:
-                    unknown_pool.add(team_raw)
+                    unknown_list.append(team_raw)
 
         records.append({
             "Username": username,
@@ -129,68 +129,56 @@ if uploaded_file:
 
     st.success(f"✅ Parsed users: {len(df)}")
 
-    # -------------------------------------------------
-    # MAIN TABLE (FULL WIDTH)
-    # -------------------------------------------------
+    # ---------------- MAIN TABLE ----------------
     st.dataframe(df, use_container_width=True)
 
     # -------------------------------------------------
-    # ADMIN ROLL
+    # ADMIN ROLL – EXCEL STYLE MULTI SELECT
     # -------------------------------------------------
-   # ---------------- ADMIN ROLL (EXCEL-LIKE MULTI SELECT) ----------------
-st.subheader("🔴 Admin Roll – Unknown Teams (Batch Edit)")
+    st.subheader("🔴 Admin Roll – Unknown Teams (Excel-style Batch Edit)")
 
-if unknown_pool:
-    # count unknown frequency
-    from collections import Counter
-    unknown_list = []
-    for t in unknown_pool:
-        unknown_list.append(t)
+    if unknown_list:
+        counter = Counter(unknown_list)
 
-    unknown_counter = Counter(unknown_list)
+        # format: "Aston villa (12)"
+        options = [
+            f"{name} ({count})"
+            for name, count in sorted(counter.items(), key=lambda x: -x[1])
+        ]
 
-    # show multiselect with count
-    options = [
-        f"{name}  ({count})"
-        for name, count in unknown_counter.items()
-    ]
+        selected_items = st.multiselect(
+            "Unknown Teams (RAW) – checkbox နဲ့ အများကြီးရွေးပါ",
+            options
+        )
 
-    selected = st.multiselect(
-        "Unknown Teams (RAW) – Excel လို checkbox နဲ့ရွေးပါ",
-        options
-    )
+        correct_team = st.selectbox(
+            "Correct Standard Team",
+            STANDARD_TEAMS
+        )
 
-    correct_team = st.selectbox(
-        "Correct Standard Team",
-        STANDARD_TEAMS
-    )
+        if st.button("💾 Apply to Selected"):
+            if not selected_items:
+                st.warning("အနည်းဆုံး ၁ ခုရွေးပါ")
+            else:
+                for item in selected_items:
+                    raw_name = item.rsplit("(", 1)[0].strip()
+                    LEARNED_MAP[raw_name] = correct_team
 
-    if st.button("💾 Apply to Selected"):
-        if not selected:
-            st.warning("အနည်းဆုံး ၁ ခုရွေးပါ")
-        else:
-            for item in selected:
-                raw_name = item.rsplit("(", 1)[0].strip()
-                LEARNED_MAP[raw_name] = correct_team
+                with open(LEARN_FILE, "w", encoding="utf-8") as f:
+                    json.dump(LEARNED_MAP, f, ensure_ascii=False, indent=2)
 
-            with open(LEARN_FILE, "w", encoding="utf-8") as f:
-                json.dump(LEARNED_MAP, f, ensure_ascii=False, indent=2)
+                st.success(
+                    f"✅ {len(selected_items)} team(s) ကို '{correct_team}' အဖြစ် ပြင်ပြီးပါပြီ"
+                )
+                st.info("🔄 App ကို Refresh / Rerun လုပ်ပါ")
 
-            st.success(
-                f"✅ {len(selected)} team(s) ကို '{correct_team}' အဖြစ် ပြင်ပြီးပါပြီ"
-            )
-            st.info("🔄 App ကို rerun / refresh လုပ်ပါ")
+    else:
+        st.success("Unknown team မရှိပါ 🎉")
 
-else:
-    st.success("Unknown team မရှိပါ 🎉")
-
-    # -------------------------------------------------
-    # EXPORT
-    # -------------------------------------------------
+    # ---------------- EXPORT ----------------
     st.download_button(
         "⬇️ Download CSV",
         df.to_csv(index=False),
         file_name="telegram_team_parser.csv",
         mime="text/csv"
     )
-
