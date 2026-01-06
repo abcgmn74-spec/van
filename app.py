@@ -1,4 +1,4 @@
-import streamlit as st
+import gradio as gr
 import pandas as pd
 import re
 import json
@@ -6,14 +6,6 @@ import os
 import tempfile
 from difflib import get_close_matches
 from collections import Counter
-
-# =================================================
-# PAGE CONFIG
-# =================================================
-st.set_page_config(page_title="Telegram TXT Parser", page_icon="📄", layout="wide")
-st.title("📄 Telegram TXT Parser (Stable – Rule-based)")
-
-uploaded_file = st.file_uploader("TXT file တင်ပါ", type=["txt"])
 
 # =================================================
 # FILE PATH
@@ -125,10 +117,13 @@ def normalize_team(raw_text):
     return raw_text, "unknown"
 
 # =================================================
-# MAIN
+# MAIN PARSER
 # =================================================
-if uploaded_file:
-    text = uploaded_file.read().decode("utf-8")
+def parse_txt(file):
+    if file is None:
+        return None, None, None, None, None
+
+    text = file.read().decode("utf-8")
 
     blocks = re.split(
         r"(?=^.+?,\s*\[\d{1,2}/\d{1,2}/\d{4}\s+\d{1,2}:\d{2}\s+(AM|PM)\])",
@@ -172,24 +167,66 @@ if uploaded_file:
         })
 
     df = pd.DataFrame(records)
-    st.success(f"✅ Parsed users: {len(df)}")
-    st.dataframe(df, use_container_width=True)
 
-    # =================================================
-    # ADMIN ROLL – UNKNOWN
-    # =================================================
-    if unknown_list:
-        st.subheader("🔴 Admin Roll – Unknown Teams")
-        counter = Counter(unknown_list)
-        options = [f"{k} ({v})" for k,v in counter.items()]
+    unknown_counter = Counter(unknown_list)
+    unknown_df = pd.DataFrame(
+        [{"Unknown": k, "Count": v} for k, v in unknown_counter.items()]
+    ).sort_values("Count", ascending=False)
 
-        selected = st.multiselect("Unknown", options)
-        correct_team = st.selectbox("Correct Standard Team", STANDARD_TEAMS)
+    return (
+        df,
+        unknown_df,
+        unknown_df["Unknown"].tolist(),
+        None,
+        "Parsed users: {}".format(len(df))
+    )
 
-        if st.button("💾 Apply & Save"):
-            for item in selected:
-                raw = normalize_raw_token(item.rsplit("(",1)[0])
-                LEARNED_MAP[raw] = correct_team
+# =================================================
+# ADMIN APPLY
+# =================================================
+def apply_mapping(selected_unknowns, correct_team):
+    if not selected_unknowns:
+        return "No unknown selected"
 
-            atomic_save_mapping(LEARNED_MAP)
-            st.success("✅ Mapping saved permanently")
+    for raw in selected_unknowns:
+        key = normalize_raw_token(raw)
+        LEARNED_MAP[key] = correct_team
+
+    atomic_save_mapping(LEARNED_MAP)
+    return f"Saved {len(selected_unknowns)} mappings → {correct_team}"
+
+# =================================================
+# UI
+# =================================================
+with gr.Blocks(title="Telegram TXT Parser (Gradio Stable)") as demo:
+    gr.Markdown("## 📄 Telegram TXT Parser (Stable · No AI · Free)")
+
+    file_input = gr.File(label="Upload TXT file", file_types=[".txt"])
+
+    parse_btn = gr.Button("▶ Parse")
+
+    status = gr.Markdown()
+
+    df_out = gr.Dataframe(label="User Data", interactive=False)
+
+    gr.Markdown("### 🔴 Admin Roll – Unknown Teams")
+
+    unknown_table = gr.Dataframe(label="Unknown Teams (Frequency)")
+    unknown_select = gr.CheckboxGroup(label="Select Unknown")
+    team_select = gr.Dropdown(STANDARD_TEAMS, label="Correct Standard Team")
+    save_btn = gr.Button("💾 Apply & Save")
+    save_status = gr.Markdown()
+
+    parse_btn.click(
+        parse_txt,
+        inputs=file_input,
+        outputs=[df_out, unknown_table, unknown_select, team_select, status]
+    )
+
+    save_btn.click(
+        apply_mapping,
+        inputs=[unknown_select, team_select],
+        outputs=save_status
+    )
+
+demo.launch()
