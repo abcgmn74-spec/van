@@ -7,7 +7,7 @@ from difflib import get_close_matches
 from collections import Counter
 
 # =================================================
-# PAGE CONFIG (FULL WIDTH)
+# PAGE CONFIG
 # =================================================
 st.set_page_config(
     page_title="Telegram TXT Parser",
@@ -63,16 +63,16 @@ def clean_team(line):
     return re.sub(r"^[\d\.\-\)\s]+", "", line).strip()
 
 def normalize_team(raw_team):
-    # 1️⃣ Admin learned (100% safe)
+    # 1️⃣ admin learned (100% safe)
     if raw_team in LEARNED_MAP:
         return LEARNED_MAP[raw_team], False
 
-    # 2️⃣ Auto fuzzy (high confidence only)
+    # 2️⃣ auto fuzzy (high confidence only)
     match = get_close_matches(raw_team, STANDARD_TEAMS, n=1, cutoff=0.85)
     if match:
         return match[0], False
 
-    # 3️⃣ Unknown
+    # 3️⃣ unknown
     return raw_team, True
 
 # =================================================
@@ -133,82 +133,81 @@ if uploaded_file:
     st.dataframe(df, use_container_width=True)
 
     # =================================================
+    # ADMIN ROLL – STATEFUL MULTI-SELECT (FIXED)
     # =================================================
-# ADMIN ROLL – MULTI SELECT (STATEFUL, EXCEL-LIKE)
-# =================================================
-st.subheader("🔴 Admin Roll – Unknown Teams (Multi Select)")
+    st.subheader("🔴 Admin Roll – Unknown Teams (Excel-style Batch Edit)")
 
-if unknown_list:
-    counter = Counter(unknown_list)
+    if unknown_list:
+        counter = Counter(unknown_list)
 
-    # ---------- SEARCH ----------
-    search_text = st.text_input(
-        "🔍 Search unknown team (Excel filter လို)",
-        key="unknown_search"
-    )
+        # ---------- SEARCH ----------
+        search_text = st.text_input(
+            "🔍 Search unknown team (Excel filter လို)",
+            key="unknown_search"
+        )
 
-    # ---------- SORT DESC ----------
-    sorted_items = sorted(
-        counter.items(),
-        key=lambda x: x[1],
-        reverse=True
-    )
+        # ---------- SORT DESC ----------
+        sorted_items = sorted(
+            counter.items(),
+            key=lambda x: x[1],
+            reverse=True
+        )
 
-    # ---------- FILTER ----------
-    if search_text:
-        sorted_items = [
-            (name, cnt)
-            for name, cnt in sorted_items
-            if search_text.lower() in name.lower()
-        ]
+        # ---------- FILTER ----------
+        if search_text:
+            sorted_items = [
+                (name, cnt)
+                for name, cnt in sorted_items
+                if search_text.lower() in name.lower()
+            ]
 
-    options = [f"{name} ({cnt})" for name, cnt in sorted_items]
+        options = [f"{name} ({cnt})" for name, cnt in sorted_items]
 
-    # ---------- SESSION STATE ----------
-    if "selected_unknowns" not in st.session_state:
-        st.session_state.selected_unknowns = []
-
-    selected_items = st.multiselect(
-        "Unknown Teams (RAW) – checkbox နဲ့ အများကြီးရွေးပါ",
-        options,
-        default=[
-            x for x in st.session_state.selected_unknowns
-            if x in options
-        ],
-        key="unknown_multiselect"
-    )
-
-    # save selection persistently
-    st.session_state.selected_unknowns = selected_items
-
-    correct_team = st.selectbox(
-        "Correct Standard Team",
-        STANDARD_TEAMS,
-        key="correct_team_select"
-    )
-
-    if st.button("💾 Apply to Selected"):
-        if not st.session_state.selected_unknowns:
-            st.warning("အနည်းဆုံး ၁ ခုရွေးပါ")
-        else:
-            for item in st.session_state.selected_unknowns:
-                raw_name = item.rsplit("(", 1)[0].strip()
-                LEARNED_MAP[raw_name] = correct_team
-
-            with open(LEARN_FILE, "w", encoding="utf-8") as f:
-                json.dump(LEARNED_MAP, f, ensure_ascii=False, indent=2)
-
-            st.success(
-                f"✅ {len(st.session_state.selected_unknowns)} team(s) ကို "
-                f"'{correct_team}' အဖြစ် ပြင်ပြီးပါပြီ"
-            )
-
-            # clear selection after apply (optional)
+        # ---------- SESSION STATE ----------
+        if "selected_unknowns" not in st.session_state:
             st.session_state.selected_unknowns = []
-            st.info("🔄 App ကို Refresh / Rerun လုပ်ပါ")
 
-else:
-    st.success("Unknown team မရှိပါ 🎉")
+        selected_items = st.multiselect(
+            "Unknown Teams (RAW) – checkbox နဲ့ အများကြီးရွေးပါ",
+            options,
+            default=[
+                x for x in st.session_state.selected_unknowns
+                if x in options
+            ],
+            key="unknown_multiselect"
+        )
+
+        # persist selection
+        st.session_state.selected_unknowns = selected_items
+
+        correct_team = st.selectbox(
+            "Correct Standard Team",
+            STANDARD_TEAMS,
+            key="correct_team_select"
+        )
+
+        if st.button("💾 Apply to Selected"):
+            if not st.session_state.selected_unknowns:
+                st.warning("အနည်းဆုံး ၁ ခုရွေးပါ")
+            else:
+                for item in st.session_state.selected_unknowns:
+                    raw_name = item.rsplit("(", 1)[0].strip()
+                    LEARNED_MAP[raw_name] = correct_team
+
+                with open(LEARN_FILE, "w", encoding="utf-8") as f:
+                    json.dump(LEARNED_MAP, f, ensure_ascii=False, indent=2)
+
+                st.success(
+                    f"✅ {len(st.session_state.selected_unknowns)} team(s) ကို "
+                    f"'{correct_team}' အဖြစ် ပြင်ပြီးပါပြီ"
+                )
+
+                # clear selection after apply
+                st.session_state.selected_unknowns = []
+                st.info("🔄 App ကို Refresh / Rerun လုပ်ပါ")
+
+    else:
+        st.success("Unknown team မရှိပါ 🎉")
 
     # ================= EXPORT =================
     st.download_button(
@@ -217,4 +216,3 @@ else:
         file_name="telegram_team_parser.csv",
         mime="text/csv"
     )
-
