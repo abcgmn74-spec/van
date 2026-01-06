@@ -12,7 +12,7 @@ from datetime import datetime
 # PAGE CONFIG
 # =================================================
 st.set_page_config(page_title="Telegram TXT Parser", page_icon="📄", layout="wide")
-st.title("📄 Telegram TXT Parser (Team / Other Comment / User Acc)")
+st.title("📄 Telegram TXT Parser (User-based View)")
 
 uploaded_file = st.file_uploader("TXT file တင်ပါ", type=["txt"])
 
@@ -56,14 +56,12 @@ STANDARD_TEAMS = [
 # MYANMAR / REAL-WORLD ALIAS
 # =================================================
 MYANMAR_TEAM_ALIAS = {
-    "man city": "Manchester City","man city.": "Manchester City",
-    "man united": "Manchester United","man u": "Manchester United",
-    "မန်စီးတီး": "Manchester City","စီတီ": "Manchester City",
+    "man city": "Manchester City","man united": "Manchester United",
+    "man u": "Manchester United","မန်စီးတီး": "Manchester City",
     "ရီးရဲ": "Real Madrid","ရီးရဲလ်": "Real Madrid",
-    "ရီးရဲမက်ဒရစ်": "Real Madrid","ရီရဲ": "Real Madrid",
-    "လီပါပူး": "Liverpool","လီပါပူးး": "Liverpool",
-    "ဗီလာရီရဲ": "Villarreal","ဗီလာရီးရဲလ်": "Villarreal",
-    "နယူး": "Newcastle","နယူကာဆယ်": "Newcastle",
+    "လီပါပူး": "Liverpool",
+    "ဗီလာရီရဲ": "Villarreal",
+    "နယူး": "Newcastle",
     "ဘရိုက်တန်": "Brighton",
     "aston villa": "Aston Villa",
     "west ham": "West Ham",
@@ -76,18 +74,23 @@ MYANMAR_TEAM_ALIAS = {
 # =================================================
 # REGEX
 # =================================================
+USER_HEADER = re.compile(
+    r"^(.+?),\s*\[\d{1,2}/\d{1,2}/\d{4}\s+\d{1,2}:\d{2}\s+(AM|PM)\]$"
+)
 PHONE_PATTERN = re.compile(r"(?:\+?959|09)\d{7,12}")
 USER_ACC_KEYWORDS = re.compile(r"(ok\s*bet|okbet|slot|shank|bet)", re.I)
 
 # =================================================
 # HELPERS
 # =================================================
+def extract_username(line):
+    m = USER_HEADER.match(line)
+    return m.group(1).strip() if m else None
+
 def is_user_acc(line):
     return bool(PHONE_PATTERN.search(line) or USER_ACC_KEYWORDS.search(line))
 
 def normalize_raw_token(text: str) -> str:
-    if not text:
-        return ""
     cleaned = re.sub(r"^[^က-႟A-Za-z]+|[^က-႟A-Za-z]+$", "", text)
     return cleaned.strip().lower()
 
@@ -103,12 +106,8 @@ def is_other_comment(token: str) -> bool:
 def normalize_team(raw_team):
     raw = normalize_raw_token(raw_team)
 
-    if not raw:
-        return raw_team, "other"
-
     if raw in LEARNED_MAP:
         return LEARNED_MAP[raw], "team"
-
     if raw in MYANMAR_TEAM_ALIAS:
         return MYANMAR_TEAM_ALIAS[raw], "team"
 
@@ -117,57 +116,67 @@ def normalize_team(raw_team):
         return match[0], "team"
 
     if is_other_comment(raw):
-        return raw, "other"
+        return raw_team, "other"
 
-    return raw, "unknown"
+    return raw_team, "unknown"
 
 # =================================================
 # MAIN
 # =================================================
 if uploaded_file:
     text = uploaded_file.read().decode("utf-8")
-    lines = [l.strip() for l in text.split("\n") if l.strip()]
 
-    teams, others, unknowns, accounts = [], [], [], []
+    blocks = re.split(
+        r"(?=^.+?,\s*\[\d{1,2}/\d{1,2}/\d{4}\s+\d{1,2}:\d{2}\s+(AM|PM)\])",
+        text,
+        flags=re.MULTILINE
+    )
 
-    for line in lines:
-        if is_user_acc(line):
-            accounts.append(line)
+    records = []
+    unknown_list = []
+
+    for block in blocks:
+        lines = [l.strip() for l in block.split("\n") if l.strip()]
+        if not lines:
             continue
 
-        std, kind = normalize_team(line)
+        username = extract_username(lines[0])
+        if not username:
+            continue
 
-        if kind == "team":
-            teams.append(std)
-        elif kind == "other":
-            others.append(line)
-        else:
-            unknowns.append(line)
+        teams, others, accounts = [], [], []
 
-    st.success("✅ Parsing completed")
+        for line in lines[1:]:
+            if is_user_acc(line):
+                accounts.append(line)
+                continue
 
-    col1, col2 = st.columns(2)
+            std, kind = normalize_team(line)
 
-    with col1:
-        st.subheader("🏟 Teams (STANDARD)")
-        st.dataframe(pd.DataFrame({"Team": list(dict.fromkeys(teams))}))
+            if kind == "team":
+                teams.append(std)
+            elif kind == "other":
+                others.append(line)
+            else:
+                unknown_list.append(line)
 
-        st.subheader("❓ Unknown")
-        st.dataframe(pd.DataFrame({"Unknown": list(dict.fromkeys(unknowns))}))
+        records.append({
+            "Username": username,
+            "Teams (STANDARD)": ", ".join(dict.fromkeys(teams)),
+            "Other Comment": ", ".join(dict.fromkeys(others)),
+            "User Acc": ", ".join(dict.fromkeys(accounts))
+        })
 
-    with col2:
-        st.subheader("💬 Other Comment")
-        st.dataframe(pd.DataFrame({"Comment": list(dict.fromkeys(others))}))
-
-        st.subheader("👤 User Acc")
-        st.dataframe(pd.DataFrame({"Account": list(dict.fromkeys(accounts))}))
+    df = pd.DataFrame(records)
+    st.success(f"✅ Parsed users: {len(df)}")
+    st.dataframe(df, use_container_width=True)
 
     # =================================================
-    # ADMIN ROLL
+    # ADMIN ROLL – UNKNOWN
     # =================================================
-    if unknowns:
+    if unknown_list:
         st.subheader("🔴 Admin Roll – Unknown Teams")
-        counter = Counter(unknowns)
+        counter = Counter(unknown_list)
         options = [f"{k} ({v})" for k,v in counter.items()]
 
         selected = st.multiselect("Unknown", options)
